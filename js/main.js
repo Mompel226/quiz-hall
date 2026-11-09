@@ -11,8 +11,9 @@
     if (global.Pupil && Pupil.stop) Pupil.stop();
     if (location.hash) history.replaceState(null, '', location.pathname);
     $('nav').hidden = true; $('who').hidden = true; $('signOut').hidden = true;
-    var app = UI.clear($('app'));
+    var app = UI.clear($('app')), mark = document.querySelector('.brand .logo');   /* the header's mark, drawn larger */
     app.appendChild(el('section', { class: 'panel signin', id: 'signinPanel' }, [
+      mark ? mark.cloneNode(true) : null,
       el('h1', {}, 'Quiz Hall'),
       el('p', { class: 'lead' }, 'Teachers run their Google Forms quizzes here as locked quizzes. Pupils sit them here.'),
       el('div', { id: 'gbtn', class: 'gbtn' }),

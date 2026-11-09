@@ -19,11 +19,13 @@
       nav.appendChild(a);
     });
   }
-  function page(title, current) {
+  /* back: [address, words] — a page inside a list has a way back to that list above its heading (Daniel, 9 Nov 2026) */
+  function page(title, current, back) {
     stopLive();
     drawNav(current);
     var app = UI.clear($('app'));
     if (title) document.title = title + ' · Quiz Hall';
+    if (back) app.appendChild(el('a', { class: 'back', href: back[0] }, [el('span', { 'aria-hidden': 'true' }, '←'), ' ' + back[1]]));
     return app;
   }
   function fail(app, e) {
@@ -167,7 +169,7 @@
   var REASON = { tab_switch: 'left the page', long_away: 'left the page for a long time', shift_command: 'Shift + Command', shortcut: 'screenshot key',
                  offline: 'offline 15 s', right_click: 'right-clicks', focus_lost: 'left the window' };
   function live(sid) {
-    var app = page('Live', 'home');
+    var app = page('Live', 'home', ['#home', 'Today']);
     var head = el('div', { class: 'head' }), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
     app.appendChild(head); app.appendChild(top); app.appendChild(body);
     var last = null;
@@ -239,7 +241,7 @@
   /* ── To mark ───────────────────────────────────────────── */
   function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
   function mark(sid, qid) {
-    var app = page('To mark', 'mark');
+    var app = page('To mark', 'mark', sid || qid ? ['#mark', 'To mark'] : null);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
     API.call('mark.list', sid ? { sittingId: sid } : {}).then(function (r) {
@@ -426,7 +428,7 @@
 
   /* add a quiz from a Google Form, or import the same form again as a new version */
   function addQuiz(quizId) {
-    var app = page('Add a quiz', 'quizzes');
+    var app = page('Add a quiz', 'quizzes', ['#quizzes', 'My quizzes']);
     app.appendChild(el('h1', {}, quizId ? 'Import the form again' : 'Add a quiz from a Google Form'));
     var box = el('section', { class: 'panel' });
     app.appendChild(box);
@@ -512,7 +514,7 @@
 
   /* one quiz: its questions with the key, its versions, run, edit, share, bin */
   function quizPage(quizId, version) {
-    var app = page('Quiz', 'quizzes');
+    var app = page('Quiz', 'quizzes', ['#quizzes', 'My quizzes']);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
     Promise.all([API.call('quiz.get', { quizId: quizId, version: Number(version) }), loadQuizzes()]).then(function (res) {
@@ -650,17 +652,44 @@
     });
     loadClasses(true).then(function (cl) {
       UI.clear(box);
-      if (!cl.length) { box.appendChild(el('p', { class: 'muted' }, 'No class yet. Import one from Google Classroom.')); return; }
-      var tb = el('tbody');
-      cl.forEach(function (c) {
-        tb.appendChild(el('tr', { class: 'is-click', onclick: function () { location.hash = '#cls/' + c.id; } }, [el('td', {}, c.name), el('td', { class: 'num' }, String(c.pupils)),
-          el('td', { class: 'small' }, c.checked ? 'Checked against Classroom ' + UI.date(c.checked) : '')]));
-      });
-      box.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, [el('th', {}, 'Class'), el('th', { class: 'num' }, 'Pupils'), el('th', {}, '')])), tb])));
+      if (!cl.length) box.appendChild(el('p', { class: 'muted' }, 'No class yet. Import one from Google Classroom.'));
+      else {
+        var tb = el('tbody');
+        cl.forEach(function (c) {
+          var rm = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Remove ' + c.name }, 'Remove');
+          rm.addEventListener('click', function (ev) { ev.stopPropagation(); removeClass(c, rm, classes); });
+          tb.appendChild(el('tr', { class: 'is-click', onclick: function () { location.hash = '#cls/' + c.id; } }, [el('td', {}, c.name), el('td', { class: 'num' }, String(c.pupils)),
+            el('td', { class: 'small' }, c.checked ? 'Checked against Classroom ' + UI.date(c.checked) : ''), el('td', { class: 'act' }, rm)]));
+        });
+        box.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, [el('th', {}, 'Class'), el('th', { class: 'num' }, 'Pupils'), el('th', {}, ''), el('th', {}, '')])), tb])));
+      }
+      API.call('classes.list', { archived: true }, { quiet: true }).then(function (r) {
+        var gone = r.classes || [];
+        if (!gone.length) return;
+        var list = el('div', { class: 'list' });
+        gone.forEach(function (c) {
+          var b = el('button', { class: 'btn btn--small', type: 'button' }, 'Bring back');
+          b.addEventListener('click', function () { bringBack(c, b, classes); });
+          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, UI.plural(c.pupils, 'pupil'))]), b]));
+        });
+        box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h2', {}, 'Removed classes'),
+          el('p', { class: 'small' }, 'Their results are kept. Bring a class back to run a quiz for it or to see its results.'), list]));
+      }, function () {});
     }, function (e) { UI.clear(box); fail(box, e); });
   }
+  /* Remove puts a class aside (the Classes tab's "archived" column, class.archive): nothing is deleted, its results stay
+     in the Sheet, a quiz already running for it goes on, and Bring back undoes it */
+  function removeClass(c, btn, after) {
+    if (!window.confirm('Remove ' + c.name + ' from My classes?\n\nNothing is deleted: its results are kept, and you can bring it back under "Removed classes" at the bottom of My classes. Google Classroom does not change.')) return;
+    UI.act(btn, 'Removing…', API.call('class.archive', { classId: c.id, archived: true }), c.name + ' is removed from My classes.')
+      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+  }
+  function bringBack(c, btn, after) {
+    UI.act(btn, 'Bringing back…', API.call('class.archive', { classId: c.id, archived: false }), c.name + ' is back in My classes.')
+      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+  }
   function classPage(classId) {
-    var app = page('Class', 'classes');
+    var app = page('Class', 'classes', ['#classes', 'My classes']);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
     function load() {
@@ -702,6 +731,12 @@
         box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h3', {}, 'Add a pupil by hand'),
           el('div', { class: 'fields' }, [el('label', { class: 'field' }, ['School address', em]), el('label', { class: 'field' }, ['Name', nm]), add]),
           el('p', { class: 'small' }, 'Changes here change Quiz Hall\'s list only. Google Classroom stays as it is.')]));
+        var gone = el('button', { class: 'btn btn--small' + (c.archived ? '' : ' btn--danger'), type: 'button' }, c.archived ? 'Bring back this class' : 'Remove this class');
+        gone.addEventListener('click', function () {
+          if (c.archived) bringBack(c, gone, load);
+          else removeClass(c, gone, function () { location.hash = '#classes'; });
+        });
+        box.appendChild(el('div', { class: 'row', style: 'margin-top:16px' }, gone));
       }, function (e) { UI.clear(box); fail(box, e); });
     }
     load();
@@ -722,6 +757,7 @@
       el('li', {}, 'Pupils see their total score when they hand in. They see the right answers and your comments only when you press Release the answers.'),
       el('li', {}, 'Written (paragraph) answers are kept until 31 July, the end of the school year. On 1 August the words are deleted; the marks stay. Download any you want to keep before then.'),
       el('li', {}, 'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.'),
+      el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it.'),
       el('li', {}, 'A quiz you share can be run by your colleagues. Only you can change it, and nobody else sees your results.'),
       el('li', {}, 'Pupils need Google Chrome on a laptop or a Chromebook. Phones, iPads and other browsers are refused.')]));
   }
