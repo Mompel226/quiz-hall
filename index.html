@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Hall</title>
+<meta name="description" content="Run your Google Forms quizzes as locked quizzes in class, and see how every pupil is doing.">
+<meta name="robots" content="noindex">
+<meta name="copyright" content="Dr Daniel Mompel Riera">
+<link rel="stylesheet" href="css/app.css?v=1">
+<script>
+  /* bright or dark: the computer's own setting first, then the reader's choice (memory bright-and-dark-versions) */
+  (function () { try { var t = localStorage.getItem('quizhall.theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="top__in">
+    <p class="maker">Made by <strong>Dr Daniel Mompel Riera</strong></p>
+    <a class="brand" href="#home">Quiz Hall</a>
+    <nav class="nav" id="nav" hidden aria-label="Teacher pages"></nav>
+    <div class="top__right">
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Bright or dark">☾</button>
+      <span class="who" id="who" hidden></span>
+      <button class="link" id="signOut" type="button" hidden>Sign out</button>
+    </div>
+  </div>
+  <div class="bar" id="busyBar" hidden><span></span></div>
+</header>
+
+<main id="app" class="app" tabindex="-1">
+  <section class="panel signin" id="signinPanel">
+    <h1>Quiz Hall</h1>
+    <p class="lead">Teachers run their Google Forms quizzes here as locked quizzes. Pupils sit them here.</p>
+    <div id="gbtn" class="gbtn"></div>
+    <p class="small" id="signinNote">Sign in with your school Google account.</p>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<footer class="foot">
+  <p>Something wrong, or a suggestion? Please contact me: <a href="mailto:dmompelriera@nlcsjeju.kr">dmompelriera@nlcsjeju.kr</a></p>
+</footer>
+
+<script src="js/config.js?v=1"></script>
+<script src="js/signin.js?v=1"></script>
+<script src="js/ui.js?v=1"></script>
+<script src="js/api.js?v=1"></script>
+<script src="js/forms.js?v=1"></script>
+<script src="js/analysis.js?v=1"></script>
+<script src="js/teacher.js?v=1"></script>
+<script src="js/pupil.js?v=1"></script>
+<script src="js/main.js?v=1"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+</body>
+</html>

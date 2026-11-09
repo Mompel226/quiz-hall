@@ -1,0 +1,12 @@
+Copyright (c) 2026 Dr Daniel Mompel Riera
+
+THE SOFTWARE — everything that runs: JavaScript, HTML structure and CSS.
+    GNU Affero General Public License v3.0 — see LICENSE
+
+js/signin.js is a copy of the sign-in shared by every nlcsbiology.com site (labs-shared/signin.js), under the same licence.
+
+NOT COVERED: the quizzes, questions and pictures that teachers add live in Quiz Hall's back office, never in this
+repository, and stay theirs.
+
+The copyright is held by one person, so other terms can be granted. If you want to use any of this commercially, ask:
+dmompelriera@nlcsjeju.kr
