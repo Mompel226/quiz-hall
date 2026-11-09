@@ -88,9 +88,28 @@
   /* ── sitting the quiz ── */
   function key(sid) { var w = global.SignIn && SignIn.who(); return 'quizhall.ans.' + sid + '.' + (w ? w.email : ''); }
   function loadLocal(sid) { try { return JSON.parse(localStorage.getItem(key(sid)) || 'null'); } catch (e) { return null; } }
-  function saveLocal() { if (!S) return; try { localStorage.setItem(key(S.sid), JSON.stringify({ answers: S.answers, at: Date.now() })); } catch (e) {} }
+  function saveLocal() { if (!S || S.preview) return; try { localStorage.setItem(key(S.sid), JSON.stringify({ answers: S.answers, at: Date.now() })); } catch (e) {} }
   function dropLocal(sid) { try { localStorage.removeItem(key(sid)); } catch (e) {} }
 
+  /* ── Try it as a pupil: a teacher's preview (quiz.try / quiz.tryMark write no row; nothing is kept in this browser).
+     The page, the lock rules and Hand in are the pupil's own; the teacher unlocks the lock themself. ── */
+  P.preview = function (o) {
+    stopAll(); S = null;
+    var app = UI.clear($('app'));
+    app.appendChild(el('p', { class: 'muted' }, 'Opening the quiz as a pupil sees it…'));
+    API.call('quiz.try', { quizId: o.quizId, version: o.version }).then(function (r) {
+      S = { preview: o, sid: 'preview', quiz: r.quiz, answers: {}, deadline: 0, skew: r.now - Date.now(), locked: false,
+            reasons: r.reasons || {}, reasonText: '', graceUntil: 0, dirty: false, lastSent: 0, rightClicks: 0, hasWritten: r.hasWritten };
+      drawQuiz();
+      watch();
+    }, function (e) { UI.clear(app).appendChild(el('div', { class: 'notice notice--bad' }, e && e.message ? e.message : String(e))); });
+  };
+  function previewBanner(o, done) {
+    var b = P.detectBrowser();
+    return el('div', { class: 'notice notice--preview' }, [el('strong', {}, 'Try it as a pupil. '),
+      done ? 'Nothing was saved. ' : 'Nothing is saved. The quiz locks as it would for a pupil; here you unlock it yourself. ',
+      !done && b.kind !== 'chrome' ? 'Pupils must use Chrome on a laptop. ' : '', el('a', { href: o.back }, done ? 'Back to the quiz' : 'End the preview')]);
+  }
   function begin(q, btn) {
     UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id })).then(function (r) {
       if (r.handed) return handedIn(r, q.title);
@@ -112,6 +131,7 @@
     var hand = el('button', { class: 'btn btn--primary', type: 'button' }, 'Hand in');
     hand.addEventListener('click', confirmHandIn);
     app.appendChild(el('div', { class: 'quizhead' }, [el('strong', {}, S.quiz.title), timer, saved, el('span', { style: 'flex:1' }), hand]));
+    if (S.preview) app.insertBefore(previewBanner(S.preview, false), app.firstChild);
     if (S.quiz.description) app.appendChild(el('p', { class: 'q__h' }, S.quiz.description));
     var n = 0;
     S.quiz.questions.forEach(function (q) {
@@ -153,9 +173,10 @@
     app.appendChild(el('div', { class: 'row', style: 'justify-content:flex-end' }, [el('button', { class: 'btn btn--primary', type: 'button', onclick: confirmHandIn }, 'Hand in')]));
     tick();
   }
-  function changed() { saveLocal(); S.dirty = true; var s = $('qsaved'); if (s) s.textContent = 'Kept on this computer'; }
+  function changed() { saveLocal(); S.dirty = !S.preview; var s = $('qsaved'); if (s) s.textContent = S.preview ? 'Preview: not saved' : 'Kept on this computer'; }
   function tick() {
     if (!S) return;
+    if (S.preview) { var pt = $('qtimer'); if (pt) { pt.textContent = 'No time limit in the preview'; pt.classList.add('timer--quiet'); } return; }
     var t = $('qtimer'), left = S.deadline - now();
     if (t) { t.textContent = UI.left(left) + ' left'; t.classList.toggle('is-low', left < 120000); }
     if (left <= 0 && !S.handing) handIn(true);
@@ -166,7 +187,7 @@
     P.sendTimer = setTimeout(send, ms === undefined ? 72000 + Math.random() * 36000 : ms);
   }
   function send() {
-    if (!S || S.handing) return;
+    if (!S || S.handing || S.preview) return;
     if (!S.dirty && Date.now() - S.lastSent < 80000) { sendSoon(); return; }
     var body = { sittingId: S.sid, answers: S.answers };
     S.dirty = false;
@@ -186,9 +207,9 @@
      cannot arrive until the connection is back), and only then does the page ask whether the teacher has unlocked it. */
   function event(kind) {
     if (!S || S.locked || S.handing || Date.now() < S.graceUntil) return;
-    S.locked = true; S.reasonText = ''; S.pendingEvent = kind;
+    S.locked = true; S.reasonText = S.preview ? (S.reasons[kind] || '') : ''; S.pendingEvent = S.preview ? null : kind;
     showLock();
-    sendEvent();
+    if (!S.preview) sendEvent();
   }
   function sendEvent() {
     if (!S || !S.pendingEvent) return Promise.resolve();
@@ -201,6 +222,7 @@
     }, function () { /* kept: the next poll sends it again */ });
   }
   function showLock() {
+    if (S && S.preview) return showPreviewLock();
     var o = $('lockOverlay');
     if (!o) {
       o = el('div', { class: 'overlay', id: 'lockOverlay', role: 'alertdialog', 'aria-modal': 'true' }, el('div', { class: 'overlay__box' }, [
@@ -222,6 +244,15 @@
     }, 7000);
   }
   function hideLock() { clearInterval(P.lockPoll); var o = $('lockOverlay'); if (o) o.remove(); }
+  function showPreviewLock() {
+    if ($('lockOverlay')) return;
+    var un = el('button', { class: 'btn btn--primary', type: 'button' }, 'Unlock (preview)');
+    un.addEventListener('click', function () { if (!S) return; S.locked = false; S.graceUntil = Date.now() + 45000; hideLock(); });
+    document.body.appendChild(el('div', { class: 'overlay', id: 'lockOverlay', role: 'alertdialog', 'aria-modal': 'true' }, el('div', { class: 'overlay__box' }, [
+      el('h2', {}, 'Your quiz is locked'), el('p', { id: 'lockWhy' }, S.reasonText || ''), el('p', {}, 'Ask your teacher to unlock it. Your answers are kept.'),
+      el('p', { class: 'small muted' }, 'This is what a pupil sees. In a real quiz they wait until you press Unlock on the live page.'),
+      el('div', { class: 'row', style: 'justify-content:center' }, un)])));
+  }
 
   var watchers = [];
   function on(target, type, fn, cap) { target.addEventListener(type, fn, cap); watchers.push([target, type, fn, cap]); }
@@ -256,7 +287,7 @@
       if (S.rightClicks >= 5) event('right_click');
     });
     ['copy', 'cut', 'paste', 'drop'].forEach(function (t) { on(document, t, function (e) { e.preventDefault(); }, true); });
-    on(window, 'beforeunload', function (e) { if (S && !S.handing) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
+    on(window, 'beforeunload', function (e) { if (S && !S.handing && !S.preview) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
   }
   function stopWatch() { watchers.forEach(function (w) { w[0].removeEventListener(w[1], w[2], w[3]); }); watchers = []; clearInterval(P.offlineTimer); }
   P.stop = function () { stopAll(); S = null; };
@@ -281,6 +312,7 @@
   }
   function handIn(timeUp) {
     if (!S || S.handing) return;
+    if (S.preview) return previewHandIn();
     S.handing = true; saveLocal();
     var app = UI.clear($('app'));
     app.appendChild(el('section', { class: 'panel' }, [el('h1', {}, timeUp ? 'Time is up: handing in…' : 'Handing in…'), el('p', { class: 'muted' }, 'Please wait.')]));
@@ -294,6 +326,23 @@
         setTimeout(attempt, Math.min(30000, 3000 * tries));
       });
     })();
+  }
+  function previewHandIn() {
+    var o = S.preview, answers = S.answers, app = UI.clear($('app'));
+    S.handing = true; stopWatch(); hideLock();
+    app.appendChild(el('section', { class: 'panel' }, [el('h1', {}, 'Handing in…'), el('p', { class: 'muted' }, 'Preview: nothing is saved.')]));
+    API.call('quiz.tryMark', { quizId: o.quizId, version: o.version, answers: answers }).then(function (r) {
+      S = null;
+      UI.clear(app);
+      app.appendChild(previewBanner(o, true));
+      var res = r.result;
+      app.appendChild(el('section', { class: 'panel' }, [el('h2', {}, 'What a pupil sees when they hand in'),
+        el('p', { style: 'font-size:22px;font-weight:700' }, 'Your score: ' + res.score + ' of ' + res.max + (res.toMark ? ' so far' : '')),
+        res.toMark ? el('p', {}, 'Your teacher marks ' + UI.plural(res.toMark, 'more answer') + '. Your score can still go up.') : null,
+        el('p', { class: 'small' }, 'You see the right answers when your teacher releases them.')]));
+      app.appendChild(el('h2', { style: 'margin-top:20px' }, 'What a pupil sees after you release the answers'));
+      feedbackQuestions(app, r.questions);
+    }, function (e) { if (S) { S.handing = false; drawQuiz(); watch(); } UI.toast(e && e.message ? e.message : String(e), true); });
   }
   function handedIn(r, title) {
     var sid = S && S.sid;
@@ -320,7 +369,12 @@
       app.appendChild(el('h1', {}, r.title));
       app.appendChild(el('p', { style: 'font-size:20px;font-weight:700' }, 'Your score: ' + r.result.score + ' of ' + r.result.max + (r.result.toMark ? ' so far' : '')));
       app.appendChild(el('p', { class: 'small' }, 'Your written answers are kept until ' + r.writtenUntil + '. On 1 August they are deleted. Your marks are kept.'));
-      r.questions.forEach(function (q, i) {
+      feedbackQuestions(app, r.questions);
+    }, function (e) { UI.toast(e.message, true); });
+  }
+  /* each question after release: the pupil's answer, the right answer, the form's feedback, the teacher's comment */
+  function feedbackQuestions(app, questions) {
+      questions.forEach(function (q, i) {
         var mine = q.answer, shown;
         if (q.kind === 'choice' || q.kind === 'checkbox') {
           var letters = String(mine || '').split('');
@@ -335,6 +389,5 @@
           q.feedback ? el('p', { class: 'q__h' }, q.feedback) : null,
           q.comment ? el('div', { class: 'model' }, [el('strong', {}, 'Your teacher: '), q.comment]) : null]));
       });
-    }, function (e) { UI.toast(e.message, true); });
   }
 })(window);

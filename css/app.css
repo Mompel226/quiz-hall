@@ -129,6 +129,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 .notice { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 6px; margin: 0 0 14px; font-size: 15px; }
 .notice--warn { border-color: var(--warn); background: var(--warn-soft); }
 .notice--bad { border-color: var(--bad); background: var(--bad-soft); }
+.notice--preview { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
 
 /* the toast */
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; font-size: 15px; z-index: 50; max-width: calc(100vw - 32px); box-shadow: var(--shadow); }
@@ -155,6 +156,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 /* the pupil's quiz */
 .quizhead { position: sticky; top: 49px; z-index: 10; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; box-shadow: var(--shadow); }
 .timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 20px; }
+.timer.timer--quiet { font-size: 14px; font-weight: 400; color: var(--ink-2); }
 .timer.is-low { color: var(--bad); }
 .saved { font-size: 14px; color: var(--ink-2); }
 .q { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin: 0 0 14px; }

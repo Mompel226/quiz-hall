@@ -22,6 +22,7 @@
   /* back: [address, words] — a page inside a list has a way back to that list above its heading (Daniel, 9 Nov 2026) */
   function page(title, current, back) {
     stopLive();
+    if (global.Pupil && Pupil.stop) Pupil.stop();     /* leaves a Try it preview: its watchers and lock go */
     drawNav(current);
     var app = UI.clear($('app'));
     if (title) document.title = title + ' · Quiz Hall';
@@ -53,7 +54,7 @@
   function route() {
     var parts = location.hash.replace(/^#/, '').split('/'), r = parts[0] || 'home';
     var views = { home: home, run: run, live: live, mark: mark, results: results, quizzes: quizzes, quiz: quizPage,
-                  add: addQuiz, classes: classes, cls: classPage, help: help };
+                  add: addQuiz, classes: classes, cls: classPage, help: help, 'try': tryQuiz };
     (views[r] || home).apply(null, parts.slice(1));
     window.scrollTo(0, 0);
   }
@@ -189,12 +190,15 @@
         });
         acts.appendChild(close);
       }
-      var rel = el('button', { class: 'btn', type: 'button' }, s.released ? 'Hide the answers again' : 'Release the answers');
-      rel.addEventListener('click', function () {
-        UI.act(rel, s.released ? 'Hiding…' : 'Releasing…', API.call('sitting.release', { sittingId: sid, release: !s.released }),
-               s.released ? 'Pupils no longer see the answers.' : 'Pupils can now see the right answers and your comments.').then(load, function () {});
-      });
-      acts.appendChild(rel);
+      /* the answers are released only after the close: pupils still writing would see them (1_Teacher.gs _sittingRelease_) */
+      if (s.released || s.state !== 'open') {
+        var rel = el('button', { class: 'btn', type: 'button' }, s.released ? 'Hide the answers again' : 'Release the answers');
+        rel.addEventListener('click', function () {
+          UI.act(rel, s.released ? 'Hiding…' : 'Releasing…', API.call('sitting.release', { sittingId: sid, release: !s.released }),
+                 s.released ? 'Pupils no longer see the answers.' : 'Pupils can now see the right answers and your comments.').then(load, function () {});
+        });
+        acts.appendChild(rel);
+      }
       var toMark = r.pupils.reduce(function (a, p) { return a + (p.toMark || 0); }, 0);
       if (toMark) acts.appendChild(el('a', { class: 'btn btn--primary', href: '#mark/' + sid }, 'Mark ' + UI.plural(toMark, 'answer')));
       head.appendChild(acts);
@@ -387,7 +391,7 @@
     var app = page('Results', 'results');
     loadClasses().then(function (cl) {
       if (!cl.length) { app.appendChild(el('h1', {}, 'Results')); app.appendChild(el('p', {}, ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one'), '.'])); return; }
-      var id = classId || cl[0].id;
+      var id = classId && cl.some(function (c) { return c.id === classId; }) ? classId : cl[0].id;   /* an old link to a removed class opens the first */
       global.Analysis.draw(app, { classes: cl, classId: id, view: view || 'class', extra: extra });
     }, function (e) { fail(app, e); });
   }
@@ -525,7 +529,8 @@
         return el('option', { value: x.version, selected: x.version === Number(version) ? true : null }, 'Version ' + x.version + ' · ' + UI.date(x.saved) + (x.inBin ? ' (bin)' : ''));
       }));
       vs.addEventListener('change', function () { location.hash = '#quiz/' + quizId + '/' + vs.value; });
-      var acts = el('div', { class: 'row' }, [v.inBin ? null : el('a', { class: 'btn btn--primary', href: '#run/' + quizId }, 'Run this quiz'), vs]);
+      var acts = el('div', { class: 'row' }, [v.inBin ? null : el('a', { class: 'btn btn--primary', href: '#run/' + quizId }, 'Run this quiz'),
+        el('a', { class: 'btn', href: '#try/' + quizId + '/' + version }, 'Try it as a pupil'), vs]);
       if (r.mine) {
         var edit = el('button', { class: 'btn', type: 'button' }, 'Change the key or points');
         edit.addEventListener('click', function () { editQuiz(box, quiz, quizId); });
@@ -621,6 +626,12 @@
     box.appendChild(el('div', { class: 'row' }, [save, el('a', { class: 'btn', href: location.hash, onclick: function () { setTimeout(route, 0); } }, 'Cancel')]));
   }
 
+  /* ── Try it as a pupil (pupil.js Pupil.preview): the pupil's page, saving nothing ── */
+  function tryQuiz(quizId, version) {
+    page('Try it as a pupil', 'quizzes');
+    global.Pupil.preview({ quizId: quizId, version: Number(version), back: '#quiz/' + quizId + '/' + version });
+  }
+
   /* ── My classes ────────────────────────────────────────── */
   function classes() {
     var app = page('My classes', 'classes');
@@ -670,10 +681,13 @@
         gone.forEach(function (c) {
           var b = el('button', { class: 'btn btn--small', type: 'button' }, 'Bring back');
           b.addEventListener('click', function () { bringBack(c, b, classes); });
-          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, UI.plural(c.pupils, 'pupil'))]), b]));
+          var x = el('button', { class: 'btn btn--small btn--danger', type: 'button', 'aria-label': 'Delete ' + c.name + ' for good' }, 'Delete for good');
+          x.addEventListener('click', function () { deleteClass(c, x, classes); });
+          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, UI.plural(c.pupils, 'pupil'))]),
+            el('div', { class: 'row' }, [b, x])]));
         });
         box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h2', {}, 'Removed classes'),
-          el('p', { class: 'small' }, 'Their results are kept. Bring a class back to run a quiz for it or to see its results.'), list]));
+          el('p', { class: 'small' }, 'Their results are kept. Bring a class back to run a quiz for it or to see its results. Delete for good empties it from Quiz Hall.'), list]));
       }, function () {});
     }, function (e) { UI.clear(box); fail(box, e); });
   }
@@ -682,6 +696,13 @@
   function removeClass(c, btn, after) {
     if (!window.confirm('Remove ' + c.name + ' from My classes?\n\nNothing is deleted: its results are kept, and you can bring it back under "Removed classes" at the bottom of My classes. Google Classroom does not change.')) return;
     UI.act(btn, 'Removing…', API.call('class.archive', { classId: c.id, archived: true }), c.name + ' is removed from My classes.')
+      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+  }
+  /* Delete for good: only from Removed classes (class.delete refuses any other); the class, its pupil list and every
+     result of its quizzes leave the Sheet; the quizzes stay in the library */
+  function deleteClass(c, btn, after) {
+    if (!window.confirm('Delete ' + c.name + ' for good?\n\nThis deletes its pupil list and every result of its quizzes from Quiz Hall: scores, written answers and comments. It cannot be undone. Your quizzes stay in My quizzes.')) return;
+    UI.act(btn, 'Deleting…', API.call('class.delete', { classId: c.id }), c.name + ' is deleted for good.')
       .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
   }
   function bringBack(c, btn, after) {
@@ -754,10 +775,11 @@
       el('li', {}, [el('strong', {}, 'Mark and look. '), 'Answers the key cannot mark wait in To mark: one key press per mark. Results shows the class, each question, each topic and each pupil over time.'])]));
     app.appendChild(el('h2', {}, 'Good to know'));
     app.appendChild(el('ul', { class: 'panel stack small' }, [
-      el('li', {}, 'Pupils see their total score when they hand in. They see the right answers and your comments only when you press Release the answers.'),
+      el('li', {}, 'Pupils see their total score when they hand in. They see the right answers and your comments only when you press Release the answers, after the quiz is closed.'),
       el('li', {}, 'Written (paragraph) answers are kept until 31 July, the end of the school year. On 1 August the words are deleted; the marks stay. Download any you want to keep before then.'),
       el('li', {}, 'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.'),
-      el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it.'),
+      el('li', {}, 'To see a quiz as your pupils will: My quizzes ▸ the quiz ▸ Try it as a pupil. Answer, try the lock, hand in, and see the score and the answers page. Nothing is saved.'),
+      el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it. Delete for good, beside Bring back, deletes the class and all its results; it cannot be undone.'),
       el('li', {}, 'A quiz you share can be run by your colleagues. Only you can change it, and nobody else sees your results.'),
       el('li', {}, 'Pupils need Google Chrome on a laptop or a Chromebook. Phones, iPads and other browsers are refused.')]));
   }
