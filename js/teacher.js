@@ -236,10 +236,14 @@
       quizSel.addEventListener('change', describe); describe();
       var go = el('button', { class: 'btn btn--primary', type: 'button' }, 'Start now');
       when.addEventListener('change', function () { go.textContent = when.value === 'later' ? 'Set the start' : 'Start now'; });
+      var mode = lastMode(), modeBox = el('div');
+      function drawModes() { UI.clear(modeBox); modeBox.appendChild(modeSwitches(mode, function (n) { mode = n; drawModes(); })); }
+      drawModes();
       go.addEventListener('click', function () {
         var q = qz.filter(function (x) { return x.quizId === quizSel.value; })[0];
         var opensAt = when.value === 'later' && at.value ? new Date(at.value).getTime() : 0;
-        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt })
+        rememberMode(mode);
+        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt, mode: mode })
           .then(function (r) { if (r.live) keep('live:' + r.sittingId, r.live); return r; }), 'The quiz is open for the class.')
           .then(function (r) { refreshHome(); location.hash = '#live/' + r.sittingId; }, noop);
       });
@@ -247,9 +251,39 @@
         el('label', { class: 'field' }, ['Quiz', quizSel]), el('label', { class: 'field' }, ['Class', clsSel]),
         el('label', { class: 'field' }, ['Length (minutes)', mins]), el('label', { class: 'field' }, ['Start', when, at])]));
       box.appendChild(info);
+      box.appendChild(el('h3', {}, 'Test mode'));
+      box.appendChild(modeBox);
       box.appendChild(el('div', { class: 'row' }, [go]));
       box.appendChild(el('p', { class: 'small' }, 'Pupils open nlcsbiology.com/quiz-hall on a laptop in Chrome, sign in, and see this quiz. Pin that address once in each Google Classroom.'));
     });
+  }
+
+  /* ── Test mode: the Test System's four switches for one quiz run (its dashboard's Test mode strip; Daniel, 10 Nov 2026:
+     "it should mimic the test mode"). Auto-lock and Require full screen count only while Track + warn is on. The last
+     choice is this browser's default for the next run (a preference, nothing about pupils). ── */
+  var MODE0 = { track: true, block: true, lock: true, full: false };
+  function modeOf(m) { var o = {}; Object.keys(MODE0).forEach(function (k) { o[k] = m && typeof m[k] === 'boolean' ? m[k] : MODE0[k]; }); return o; }
+  function lastMode() { try { return modeOf(JSON.parse(localStorage.getItem('quizhall.mode') || 'null')); } catch (e) { return modeOf(null); } }
+  function rememberMode(m) { try { localStorage.setItem('quizhall.mode', JSON.stringify(modeOf(m))); } catch (e) {} }
+  function modeHints(m) {
+    return {
+      track: m.track ? 'Leaving the page, Shift + Command and going offline are watched, and the pupil is warned.' : 'Open book: nothing is watched and nothing locks.',
+      block: m.block ? 'Copy, paste and right-click are blocked.' : (m.track ? 'Copy, paste and right-click are allowed. Leaving the page is still watched.' : 'Fully open: pupils can copy, paste and right-click.'),
+      lock: !m.track ? 'No effect while Track + warn is off.' : m.lock ? 'A pupil who leaves the page is locked until you unlock them.' : 'Record only: you see how often each pupil left the page, and nobody is locked.',
+      full: !m.track ? 'No effect while Track + warn is off.' : m.full ? 'Begin opens the quiz in full screen. Leaving full screen pauses the quiz until the pupil returns.' : 'Pupils can work in a normal window. A Full screen button is in their quiz bar.'
+    };
+  }
+  /* the four switches; onChange(newMode) gets the whole mode with one switch changed */
+  function modeSwitches(m, onChange, busy) {
+    var hints = modeHints(m), wrap = el('div', { class: 'modes' });
+    [['track', 'Track + warn'], ['block', 'Block actions'], ['lock', 'Auto-lock'], ['full', 'Require full screen']].forEach(function (x) {
+      var k = x[0], tied = (k === 'lock' || k === 'full') && !m.track;
+      var cb = el('input', { type: 'checkbox', checked: m[k] && !tied ? true : null, disabled: tied || busy ? true : null });
+      cb.addEventListener('change', function () { var n = modeOf(m); n[k] = cb.checked; onChange(n); });
+      wrap.appendChild(el('label', { class: 'mode' + (tied ? ' is-off' : '') }, [el('span', { class: 'mode__head' }, [cb, el('strong', {}, x[1])]),
+        el('span', { class: 'mode__hint' }, busy ? 'Saving…' : hints[k])]));
+    });
+    return wrap;
   }
 
   /* ── the live page ─────────────────────────────────────── */
@@ -259,12 +293,29 @@
                  offline: 'offline 15 s', right_click: 'right-clicks', focus_lost: 'left the window' };
   function live(sid) {
     var app = page('Live', 'home', ['#home', 'Today']);
-    var head = el('div', { class: 'head' }), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
-    app.appendChild(head); app.appendChild(top); app.appendChild(body);
-    var last = null, seq = 0, barrier = 0, acting = 0;
+    var head = el('div', { class: 'head' }), modeWrap = el('div'), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
+    app.appendChild(head); app.appendChild(modeWrap); app.appendChild(top); app.appendChild(body);
+    var last = null, seq = 0, barrier = 0, acting = 0, modeDrawn = '';
+    /* the switches are drawn again only when the run's mode changes, so a 5-second check never moves them under a click */
+    function drawMode(s, busy) {
+      var sig = (s.state === 'open') + JSON.stringify(modeOf(s.mode)) + (busy ? 'busy' : '');
+      if (sig === modeDrawn) return;
+      modeDrawn = sig; UI.clear(modeWrap);
+      if (s.state !== 'open') return;
+      modeWrap.appendChild(el('section', { class: 'panel panel--tight' }, [el('h3', {}, 'Test mode'),
+        modeSwitches(modeOf(s.mode), function (n) { setMode(s, n); }, busy)]));
+    }
+    function setMode(s, n) {
+      acting++;
+      drawMode({ state: s.state, mode: n }, true);
+      API.call('sitting.mode', { sittingId: sid, mode: n }).then(function (r) { return r.live || API.call('sitting.live', { sittingId: sid }, { quiet: true }); })
+        .then(function (r) { acting--; barrier = ++seq; draw(r); UI.toast('Test mode saved. Pupils\' pages take it at their next save, within two minutes.'); },
+              function (e) { acting--; modeDrawn = ''; if (last) draw(last); UI.toast(e && e.message ? e.message : String(e), true); });
+    }
     function draw(r) {
       last = r; keep('live:' + sid, r);
       var s = r.sitting, now = r.now, open = s.state === 'open';
+      if (!acting) drawMode(s, false);
       UI.clear(head);
       head.appendChild(el('div', {}, [el('h1', {}, s.title), el('p', { class: 'small' }, s.className + ' · ' + s.minutes + ' minutes · ' +
         (open ? (s.opens > now ? 'starts at ' + UI.dateTime(s.opens) : 'pupils can begin until ' + UI.time(s.beginBy)) : 'closed ' + UI.dateTime(s.closed)))]));
@@ -296,7 +347,8 @@
       top.appendChild(el('p', { class: 'row' }, [
         el('span', { class: 'chip chip--good' }, counts.handed + ' handed in'), el('span', { class: 'chip chip--accent' }, counts.writing + ' writing'),
         counts.locked ? el('span', { class: 'chip chip--bad' }, counts.locked + ' locked') : null, el('span', { class: 'chip' }, counts.waiting + ' not begun')]));
-      var tbl = el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, ['Pupil', 'Status', 'Time left', 'Score', 'Locks', ''].map(function (h) { return el('th', {}, h); })))]);
+      var rec = s.mode && s.mode.track && !s.mode.lock;      /* record only: the count is how often, not locks */
+      var tbl = el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, ['Pupil', 'Status', 'Time left', 'Score', rec ? 'Times flagged' : 'Locks', ''].map(function (h) { return el('th', {}, h); })))]);
       var tb = el('tbody');
       var order = { locked: 0, writing: 1, waiting: 2, handed: 3 };
       r.pupils.slice().sort(function (a, b) { return order[a.status] - order[b.status] || a.name.localeCompare(b.name); }).forEach(function (p) {
@@ -884,6 +936,7 @@
       el('li', {}, 'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.'),
       el('li', {}, 'To see a quiz as your pupils will: My quizzes ▸ the quiz ▸ Try it as a pupil. Answer, try the lock, hand in, and see the score and the answers page. Nothing is saved.'),
       el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it. Delete for good, beside Bring back, deletes the class and all its results; it cannot be undone.'),
+      el('li', {}, 'Test mode, on Run a quiz and on the live page while the quiz runs, has the Test System\'s four switches: Track + warn (off: open book), Block actions (copy, paste and right-click), Auto-lock (off: record only) and Require full screen. Only you can change them for your own quiz.'),
       el('li', {}, 'A quiz you share can be run by your colleagues. Only you can change it, and nobody else sees your results.'),
       el('li', {}, 'Pupils need Google Chrome on a laptop or a Chromebook. Phones, iPads and other browsers are refused.')]));
   }

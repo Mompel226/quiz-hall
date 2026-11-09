@@ -108,6 +108,16 @@ input[type=text], input[type=email], input[type=number], input[type=datetime-loc
 textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
 input:focus, select:focus, textarea:focus, .btn:focus-visible, .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+/* Test mode: the four switches (Run a quiz, the live page) */
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 0 0 14px; }
+label.mode { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--card); cursor: pointer; }
+label.mode.is-off { cursor: default; }
+label.mode.is-off strong, label.mode.is-off .mode__hint { color: var(--ink-3); }
+.mode__head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.mode__head input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.mode__hint { font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+.panel--tight { padding: 14px 16px; }
+.panel--tight h3 { margin: 0 0 10px; }
 
 /* tables */
 .tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }

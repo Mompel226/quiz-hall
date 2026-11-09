@@ -33,6 +33,37 @@
     return { kind: 'unknown', label: 'an unknown browser' };
   };
 
+  /* ── the run's test mode: the Test System's four switches, set by the teacher (2_Pupil.gs answers carry it; Daniel,
+     10 Nov 2026: "it should mimic the test mode"). track: leaving the page, Shift + Command and going offline are
+     watched (off: open book); block: no copy, paste or right-click; lock: what is watched locks the quiz (off: the
+     teacher is told and the pupil warned); full: Begin opens full screen, and out of it the quiz waits for the pupil to
+     return (the Test System's "Return to fullscreen"). A change reaches the page at its next save or check. ── */
+  var MODE0 = { track: true, block: true, lock: true, full: false };
+  function modeOf(m) { var o = {}; Object.keys(MODE0).forEach(function (k) { o[k] = m && typeof m[k] === 'boolean' ? m[k] : MODE0[k]; }); return o; }
+
+  /* ── full screen (Daniel, 10 Nov 2026): the Full screen button in the quiz's bar shows whenever the page is not in
+     full screen; Begin asks for it when the teacher requires it (a browser allows it only straight after a click).
+     Leaving full screen is never a lock. Full screen ends with the quiz. ── */
+  function isFull() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  var fsAt = 0;            /* when full screen last began or ended: a Mac may move the window then (see watch) */
+  function goFull() {
+    if (isFull()) return Promise.resolve(true);
+    var d = document.documentElement, req = d.requestFullscreen || d.webkitRequestFullscreen;
+    if (!req) return Promise.resolve(false);
+    fsAt = Date.now();
+    try {
+      var p = req.call(d);
+      return p && p.then ? p.then(function () { return true; }, function () { return false; }) : Promise.resolve(isFull());
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function leaveFull() {
+    if (!isFull()) return;
+    var x = document.exitFullscreen || document.webkitExitFullscreen;
+    try { var p = x.call(document); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+  }
+  function fullButton() { var b = $('qfull'); if (b) b.hidden = isFull(); }
+  function isMac() { return /Macintosh|Mac OS X/.test(navigator.userAgent || ''); }
+
   P.start = function (me) {
     var b = P.detectBrowser();
     if (b.kind !== 'chrome') return wall(b);
@@ -63,9 +94,7 @@
         el('h2', {}, q.title),
         el('p', { class: 'small' }, q.teacher + ' · ' + q.className + ' · ' + UI.plural(q.questions, 'question') + ' · ' + q.minutes + ' minutes' +
           (q.state === 'soon' ? ' · starts at ' + UI.time(q.opens) : '')),
-        el('div', { class: 'notice' }, [el('strong', {}, 'Before you begin. '), 'The quiz locks if you:',
-          el('ul', { class: 'rules' }, [el('li', {}, 'leave this page or this window'), el('li', {}, 'press Shift and Command together'),
-            el('li', {}, 'are offline for 15 seconds')]), 'If it locks, ask your teacher to unlock it. Your answers are kept.']),
+        beginBox(q.mode),
         q.hasWritten ? el('p', { class: 'small' }, 'Your written answers are kept until ' + q.writtenUntil + '. On 1 August they are deleted. Your marks are kept.') : null,
         el('div', { class: 'row' }, [go])]));
     });
@@ -83,6 +112,19 @@
   }
   /* a button that asks says so until the page comes, then the page changes in one step (Daniel, 10 Nov 2026) */
   function noop() {}
+  /* what to do before Begin and what the quiz watches, as the teacher set it (memory before-begin-box: the blue box) */
+  function beginBox(raw) {
+    var m = modeOf(raw);
+    if (!m.track) return el('div', { class: 'notice' }, [el('strong', {}, 'Open book. '), 'Nothing is watched and the quiz does not lock.' + (m.block ? ' Copy, paste and right-click do not work.' : '')]);
+    return el('div', { class: 'notice' }, [el('strong', {}, 'Before you press Begin:'),
+      el('ol', { class: 'rules' }, [el('li', {}, 'Turn off every grammar or AI extension, especially Grammarly: open chrome://extensions in a new tab and switch each one off.'),
+        isMac() ? el('li', {}, 'On a Mac: in Chrome\'s menu bar, open View and untick “Always Show Toolbar in Full Screen”.') : null]),
+      m.full ? 'The quiz opens in full screen. If you leave full screen, the quiz waits until you return to it; the time goes on. ' : '',
+      m.lock ? 'The quiz locks if you:' : 'Your teacher is told if you:',
+      el('ul', { class: 'rules' }, [el('li', {}, 'leave this page or this window'), el('li', {}, 'press Shift and Command together'),
+        el('li', {}, 'are offline for 15 seconds')]),
+      (m.lock ? 'If it locks, ask your teacher to unlock it. Your answers are kept.' : 'The quiz does not lock.') + (m.block ? ' Copy, paste and right-click do not work.' : '')]);
+  }
   function refresh(ev) {
     var btn = ev && ev.currentTarget && ev.currentTarget.tagName === 'BUTTON' ? ev.currentTarget : null;
     var asking = API.call('pupil.home', {});
@@ -105,6 +147,7 @@
     API.call('quiz.try', { quizId: o.quizId, version: o.version }).then(function (r) {
       S = { preview: o, sid: 'preview', quiz: r.quiz, answers: {}, deadline: 0, skew: r.now - Date.now(), locked: false,
             reasons: r.reasons || {}, reasonText: '', graceUntil: 0, dirty: false, lastSent: 0, rightClicks: 0, hasWritten: r.hasWritten };
+      S.mode = modeOf(null);
       drawQuiz();
       watch();
     }, function (e) { UI.clear(app).appendChild(el('div', { class: 'notice notice--bad' }, e && e.message ? e.message : String(e))); });
@@ -116,17 +159,48 @@
       !done && b.kind !== 'chrome' ? 'Pupils must use Chrome on a laptop. ' : '', el('a', { href: o.back }, done ? 'Back to the quiz' : 'End the preview')]);
   }
   function begin(q, btn) {
+    var m = modeOf(q.mode);
+    if (m.track && m.full && !isFull()) {          /* asked in this click, as the Test System's Begin does */
+      goFull().then(function (ok) { if (ok) start(); else UI.toast('Your teacher asks for full screen. Allow full screen, then press Begin again.', true); });
+      return;
+    }
+    start();
+    function start() {
     UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id })).then(function (r) {
       if (r.handed) return handedIn(r, q.title);
       var local = loadLocal(q.id);
       var answers = Object.assign({}, r.answers || {}, local && local.answers ? local.answers : {});
       S = { sid: q.id, quiz: r.quiz, answers: answers, deadline: r.deadline, skew: r.now - Date.now(), locked: !!r.locked,
-            reasonText: r.reasonText, graceUntil: 0, dirty: true, lastSent: 0, rightClicks: 0, writtenUntil: r.writtenUntil, hasWritten: r.hasWritten };
+            reasonText: r.reasonText, graceUntil: 0, dirty: true, lastSent: 0, rightClicks: 0, writtenUntil: r.writtenUntil, hasWritten: r.hasWritten,
+            mode: modeOf(r.mode || q.mode) };
       drawQuiz();
       watch();
+      checkFull();
       if (S.locked) showLock();
       sendSoon(2000);
     }, function () {});
+    }
+  }
+  /* a new mode from the back office: the watchers, the Open book mark and the full-screen wait follow it */
+  function applyMode(raw) {
+    if (!S || !raw) return;
+    var m = modeOf(raw);
+    if (JSON.stringify(m) === JSON.stringify(S.mode)) return;
+    S.mode = m;
+    if (!m.track && S.locked) { S.locked = false; hideLock(); }
+    watch(); modeMark(); checkFull();
+  }
+  function modeMark() { var k = $('qmode'); if (k) { k.textContent = S && !S.mode.track ? 'Open book' : ''; k.hidden = !(S && !S.mode.track); } }
+  /* Require full screen: out of full screen, the quiz waits behind this until the pupil returns (never a lock) */
+  function checkFull() {
+    var need = !!(S && !S.handing && S.mode.track && S.mode.full && !isFull()), o = $('fsOverlay');
+    if (!need) { if (o) o.remove(); return; }
+    if (o) return;
+    var b = el('button', { class: 'btn btn--primary', type: 'button' }, 'Return to full screen');
+    b.addEventListener('click', function () { goFull(); });
+    document.body.appendChild(el('div', { class: 'overlay', id: 'fsOverlay', role: 'alertdialog', 'aria-modal': 'true' }, el('div', { class: 'overlay__box' }, [
+      el('h2', {}, 'Return to full screen to go on'), el('p', {}, 'Your teacher asks for full screen. Your answers are kept; the time goes on.'),
+      el('div', { class: 'row', style: 'justify-content:center' }, b)])));
   }
   function now() { return Date.now() + (S ? S.skew : 0); }
   function drawQuiz() {
@@ -135,7 +209,10 @@
     var timer = el('span', { class: 'timer', id: 'qtimer' }), saved = el('span', { class: 'saved', id: 'qsaved' }, '');
     var hand = el('button', { class: 'btn btn--primary', type: 'button' }, 'Hand in');
     hand.addEventListener('click', confirmHandIn);
-    app.appendChild(el('div', { class: 'quizhead' }, [el('strong', {}, S.quiz.title), timer, saved, el('span', { style: 'flex:1' }), hand]));
+    var full = el('button', { class: 'btn', type: 'button', id: 'qfull', hidden: isFull() ? true : null }, 'Full screen');
+    full.addEventListener('click', goFull);
+    var mark = el('span', { class: 'chip chip--accent', id: 'qmode', hidden: S.mode && !S.mode.track ? null : true }, S.mode && !S.mode.track ? 'Open book' : '');
+    app.appendChild(el('div', { class: 'quizhead' }, [el('strong', {}, S.quiz.title), mark, timer, saved, el('span', { style: 'flex:1' }), full, hand]));
     if (S.preview) app.insertBefore(previewBanner(S.preview, false), app.firstChild);
     if (S.quiz.description) app.appendChild(el('p', { class: 'q__h' }, S.quiz.description));
     var n = 0;
@@ -202,6 +279,7 @@
       if (r.deadline) S.deadline = r.deadline;
       if (r.now) S.skew = r.now - Date.now();
       var s = $('qsaved'); if (s) s.textContent = '✓ Saved ' + UI.time(r.now);
+      applyMode(r.mode);
       if (r.locked && !S.locked) { S.locked = true; S.reasonText = r.reasonText; showLock(); }
       sendSoon();
     }, function () { S.dirty = true; var s = $('qsaved'); if (s) s.textContent = 'Kept on this computer (not sent yet)'; sendSoon(15000); });
@@ -210,8 +288,17 @@
   /* ── the lock ── */
   /* The page locks at once; the lock is then told to the back office, again and again until it arrives (offline, it
      cannot arrive until the connection is back), and only then does the page ask whether the teacher has unlocked it. */
+  var TOLD = { tab_switch: 'You left the quiz page.', long_away: 'You left the quiz page.', focus_lost: 'You left the quiz window.',
+               shift_command: 'You pressed Shift and Command.', shortcut: 'You pressed a screenshot key.', offline: 'You were offline for 15 seconds.',
+               right_click: 'You right-clicked five times.' };
   function event(kind) {
-    if (!S || S.locked || S.handing || Date.now() < S.graceUntil) return;
+    if (!S || S.locked || S.handing || Date.now() < S.graceUntil || !S.mode.track) return;
+    if (!S.mode.lock) {                            /* record only: the teacher is told, the pupil warned, nothing locks */
+      if (Date.now() - (S.warnedAt || 0) > 3000) UI.toast((TOLD[kind] || '') + ' Your teacher is told.', true);
+      S.warnedAt = Date.now();
+      if (!S.preview) API.call('sit.event', { sittingId: S.sid, kind: kind }, { quiet: true, noRetry: true }).then(function (r) { applyMode(r.mode); }, function () {});
+      return;
+    }
     S.locked = true; S.reasonText = S.preview ? (S.reasons[kind] || '') : ''; S.pendingEvent = S.preview ? null : kind;
     showLock();
     if (!S.preview) sendEvent();
@@ -222,7 +309,8 @@
     return API.call('sit.event', { sittingId: S.sid, kind: kind }, { quiet: true, noRetry: true }).then(function (r) {
       if (!S) return;
       S.pendingEvent = null;
-      if (!r.locked) { S.locked = false; hideLock(); return; }          /* the 45 seconds after an unlock */
+      applyMode(r.mode);
+      if (!r.locked) { S.locked = false; hideLock(); return; }          /* the 45 seconds after an unlock, open book, record only */
       S.reasonText = r.reasonText; showLock();
     }, function () { /* kept: the next poll sends it again */ });
   }
@@ -245,6 +333,7 @@
         if (r.reasonText) { S.reasonText = r.reasonText; $('lockWhy').textContent = r.reasonText; }
         if (r.deadline) S.deadline = r.deadline;
         if (!r.locked) { S.locked = false; S.graceUntil = Date.now() + 45000; hideLock(); UI.toast('Your teacher unlocked your quiz.'); }
+        applyMode(r.mode);
       }, function () {});
     }, 7000);
   }
@@ -264,13 +353,34 @@
   function watch() {
     stopWatch();
     var blurAt = 0, offlineAt = 0;
-    function away(ms) { if (ms > 600) event(ms > 20000 ? 'long_away' : 'tab_switch'); }
+    /* an absence that began within 1.5 s of full screen starting or ending, and lasted under 3 s, is the Mac moving the
+       window to or from its full-screen space, not the pupil leaving */
+    function away(ms) { if (ms > 600 && !(Date.now() - ms - fsAt < 1500 && ms < 3000)) event(ms > 20000 ? 'long_away' : 'tab_switch'); }
+    function fsChange() { fsAt = Date.now(); fullButton(); checkFull(); }
+    on(document, 'fullscreenchange', fsChange);
+    on(document, 'webkitfullscreenchange', fsChange);
+    on(window, 'beforeunload', function (e) { if (S && !S.handing && !S.preview) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
+    P.offlineTimer = setInterval(function () {
+      if (S && S.mode.track && offlineAt && Date.now() - offlineAt >= 15000) { event('offline'); if (S && !S.locked) offlineAt = 0; }
+      tick();
+    }, 1000);
+    var m = S.mode;
+    if (m.block) {                                 /* Block actions */
+      on(document, 'contextmenu', function (e) {
+        e.preventDefault();
+        if (!S.mode.track) return;
+        S.rightClicks++;
+        if (S.rightClicks === 3) UI.toast('Right-clicking is not allowed. Two more and ' + (S.mode.lock ? 'the quiz locks.' : 'your teacher is told.'), true);
+        if (S.rightClicks >= 5) { event('right_click'); if (!S.mode.lock) S.rightClicks = 0; }
+      });
+      ['copy', 'cut', 'paste', 'drop'].forEach(function (t) { on(document, t, function (e) { e.preventDefault(); }, true); });
+    }
+    if (!m.track) return;                          /* open book: nothing more is watched */
     on(document, 'visibilitychange', function () { if (document.hidden) { if (!blurAt) blurAt = Date.now(); } else if (blurAt) { var a = Date.now() - blurAt; blurAt = 0; away(a); } });
     on(window, 'blur', function () { if (!blurAt) blurAt = Date.now(); });
     on(window, 'focus', function () { if (blurAt) { var a = Date.now() - blurAt; blurAt = 0; away(a); } });
     on(window, 'offline', function () { if (!offlineAt) offlineAt = Date.now(); });
     on(window, 'online', function () { offlineAt = 0; if (S && S.pendingEvent) sendEvent(); });
-    P.offlineTimer = setInterval(function () { if (offlineAt && Date.now() - offlineAt >= 15000) event('offline'); tick(); }, 1000);
     /* Shift + Command (a Mac's screenshot keys): Command and Shift held together, ending with no other key the page saw */
     var armed = false, other = false, since = 0;
     function chordKey(e) { return e.key === 'Meta' || e.key === 'OS' || e.key === 'Shift'; }
@@ -285,18 +395,10 @@
     on(document, 'mousedown', function (e) { if (armed && e.metaKey && e.shiftKey) other = true; else sync(e); }, true);
     on(document, 'mousemove', sync, true);
     on(window, 'blur', function () { if (armed) ended(); });
-    on(document, 'contextmenu', function (e) {
-      e.preventDefault();
-      S.rightClicks++;
-      if (S.rightClicks === 3) UI.toast('Right-clicking is not allowed. Two more and the quiz locks.', true);
-      if (S.rightClicks >= 5) event('right_click');
-    });
-    ['copy', 'cut', 'paste', 'drop'].forEach(function (t) { on(document, t, function (e) { e.preventDefault(); }, true); });
-    on(window, 'beforeunload', function (e) { if (S && !S.handing && !S.preview) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
   }
   function stopWatch() { watchers.forEach(function (w) { w[0].removeEventListener(w[1], w[2], w[3]); }); watchers = []; clearInterval(P.offlineTimer); }
-  P.stop = function () { stopAll(); S = null; };
-  function stopAll() { stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); }
+  P.stop = function () { stopAll(); S = null; leaveFull(); };
+  function stopAll() { stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); var f = $('fsOverlay'); if (f) f.remove(); }
 
   /* ── handing in ── */
   function confirmHandIn() {
@@ -337,7 +439,7 @@
     S.handing = true; stopWatch(); hideLock();
     app.appendChild(el('section', { class: 'panel' }, [el('h1', {}, 'Handing in…'), el('p', { class: 'muted' }, 'Preview: nothing is saved.')]));
     API.call('quiz.tryMark', { quizId: o.quizId, version: o.version, answers: answers }).then(function (r) {
-      S = null;
+      S = null; leaveFull();
       UI.clear(app);
       app.appendChild(previewBanner(o, true));
       var res = r.result;
@@ -351,7 +453,7 @@
   }
   function handedIn(r, title) {
     var sid = S && S.sid;
-    stopAll(); S = null;
+    stopAll(); S = null; leaveFull();
     if (sid) dropLocal(sid);
     var app = UI.clear($('app')), res = r.result;
     var lines = [el('h1', {}, 'Handed in'), el('p', {}, title || '')];
