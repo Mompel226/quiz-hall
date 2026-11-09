@@ -80,7 +80,7 @@
 
   /* ── the page ── */
   A.draw = function (app, o) {
-    var head = el('div', { class: 'head' }), tabs = el('div', { class: 'tabs', role: 'tablist' }), body = el('div', {}, el('p', { class: 'muted' }, 'Loading results…'));
+    var head = el('div', { class: 'head' }), tabs = el('div', { class: 'tabs', role: 'tablist' }), body = el('div');
     var clsSel = el('select', { 'aria-label': 'Class' }, o.classes.map(function (c) { return el('option', { value: c.id, selected: c.id === o.classId ? true : null }, c.name); }));
     clsSel.addEventListener('change', function () { location.hash = '#results/' + clsSel.value + '/' + o.view; });
     var dl = el('button', { class: 'btn', type: 'button' }, 'Download');
@@ -91,14 +91,14 @@
         onclick: function () { location.hash = '#results/' + o.classId + '/' + v[0]; } }, v[1]));
     });
     app.appendChild(head); app.appendChild(tabs); app.appendChild(body);
-    API.call('results.class', { classId: o.classId }).then(function (r) {
-      var m = model(r);
-      UI.clear(body);
-      if (!m.sittings.length) { body.appendChild(el('p', { class: 'muted' }, 'This class has not sat a quiz yet.')); dl.hidden = true; return; }
-      var view = { class: classView, quiz: quizView, topics: topicsView, pupil: pupilView, check: checkView }[o.view] || classView;
-      var csv = view(body, m, o.extra, o);
-      dl.onclick = function () { if (csv) UI.download(csv.name, csv.rows()); };
-    }, function (e) { UI.clear(body); body.appendChild(el('div', { class: 'notice notice--bad' }, e.message)); });
+    /* o.data is the class's results.class answer, kept by teacher.js: the heading, the tabs and the view are drawn in one
+       piece (Daniel, 10 Nov 2026), and a tab drawn again from the kept copy, without asking */
+    var m = model(o.data);
+    UI.clear(body);
+    if (!m.sittings.length) { body.appendChild(el('p', { class: 'muted' }, 'This class has not sat a quiz yet.')); dl.hidden = true; return; }
+    var view = { class: classView, quiz: quizView, topics: topicsView, pupil: pupilView, check: checkView }[o.view] || classView;
+    var csv = view(body, m, o.extra, o);
+    dl.onclick = function () { if (csv) UI.download(csv.name, csv.rows()); };
   };
 
   /* ── Class ── */

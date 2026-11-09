@@ -73,7 +73,7 @@
     if (done.length) {
       var tb = el('tbody');
       done.forEach(function (d) {
-        var see = d.released ? el('button', { class: 'btn btn--small', type: 'button', onclick: function () { feedback(d.id); } }, 'See your answers') : el('span', { class: 'small muted' }, 'Answers not released yet');
+        var see = d.released ? el('button', { class: 'btn btn--small', type: 'button', onclick: function (ev) { feedback(d.id, ev.currentTarget); } }, 'See your answers') : el('span', { class: 'small muted' }, 'Answers not released yet');
         tb.appendChild(el('tr', {}, [el('td', {}, d.title), el('td', { class: 'num' }, d.score + ' / ' + d.max + (d.toMark ? ' so far' : '')), el('td', {}, see)]));
       });
       app.appendChild(el('h2', {}, 'Your results'));
@@ -81,8 +81,13 @@
     }
     if (!open.length) P.homeTimer = setTimeout(refresh, 60000);
   }
-  function refresh() {
-    API.call('pupil.home', {}).then(function (r) { home(r.home); }, function (e) { UI.toast(e.message, true); });
+  /* a button that asks says so until the page comes, then the page changes in one step (Daniel, 10 Nov 2026) */
+  function noop() {}
+  function refresh(ev) {
+    var btn = ev && ev.currentTarget && ev.currentTarget.tagName === 'BUTTON' ? ev.currentTarget : null;
+    var asking = API.call('pupil.home', {});
+    (btn ? UI.act(btn, btn.textContent === 'Check again' ? 'Checking…' : 'Opening…', asking) : asking)
+      .then(function (r) { home(r.home); }, function (e) { if (!btn) UI.toast(e.message, true); });
   }
 
   /* ── sitting the quiz ── */
@@ -361,8 +366,8 @@
   }
 
   /* ── after release: the right answers and the teacher's comments ── */
-  function feedback(sid) {
-    API.call('sit.feedback', { sittingId: sid }).then(function (r) {
+  function feedback(sid, btn) {
+    UI.act(btn, 'Opening…', API.call('sit.feedback', { sittingId: sid })).then(function (r) {
       var app = UI.clear($('app'));
       app.appendChild(el('p', {}, el('button', { class: 'link', type: 'button', onclick: refresh }, '← Your quizzes')));
       if (!r.released) { app.appendChild(el('p', {}, 'Your teacher has not released the answers yet.')); return; }
@@ -370,7 +375,7 @@
       app.appendChild(el('p', { style: 'font-size:20px;font-weight:700' }, 'Your score: ' + r.result.score + ' of ' + r.result.max + (r.result.toMark ? ' so far' : '')));
       app.appendChild(el('p', { class: 'small' }, 'Your written answers are kept until ' + r.writtenUntil + '. On 1 August they are deleted. Your marks are kept.'));
       feedbackQuestions(app, r.questions);
-    }, function (e) { UI.toast(e.message, true); });
+    }, noop);
   }
   /* each question after release: the pupil's answer, the right answer, the form's feedback, the teacher's comment */
   function feedbackQuestions(app, questions) {

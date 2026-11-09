@@ -4,23 +4,106 @@
   'use strict';
   var T = global.Teacher = {};
   var el = UI.el, $ = UI.$;
-  var state = { home: null, classes: null, quizzes: null, liveTimer: null, me: null };
+  var state = { liveTimer: null, me: null };
 
   var NAV = [
     ['home', 'Today'], ['run', 'Run a quiz'], ['mark', 'To mark'], ['results', 'Results'],
     ['quizzes', 'My quizzes'], ['classes', 'My classes'], ['help', 'Help']
   ];
+
+  /* ── kept copies (Daniel, 10 Nov 2026: "everything loads nicely at the same time, as fast as possible") ──
+     What the pages show is asked for at sign-in, all at once (Today, the classes with the removed ones, the quizzes), and
+     kept in this tab's memory only: never in the browser's storage, and gone on sign-out. A page draws its kept copy at
+     once, in one piece, and asks again quietly (not within 15 s of the last copy); the new copy replaces the page in one
+     step only if it differs and the teacher has not clicked or typed on the page since. A change's answer carries the
+     page's new data (1_Teacher.gs _thenLists_, _thenClass_, _thenLive_, _thenQuizzes_): it is kept and drawn with the
+     "done" message, never through "Loading…". A copy asked for before a change cannot undo it (ver). A quiz version
+     never changes, so its copy is never asked for again. */
+  var kept = {}, keptAt = {}, ver = {}, asking = {}, session = 0, pageGen = 0, touched = false;
+  function noop() {}
+  function fetchOf(key) {
+    var m;
+    if (key === 'home') return API.call('home', {}, { quiet: true }).then(function (r) { return r.home; });
+    if (key === 'quizzes') return API.call('quizzes.list', {}, { quiet: true }).then(function (r) { return r.quizzes; });
+    if (key === 'classes') return API.call('classes.list', {}, { quiet: true }).then(function (r) {
+      if (r.removed) return { classes: r.classes, removed: r.removed };
+      /* a back office before 10 Nov 2026 gives the removed classes in a second answer */
+      return API.call('classes.list', { archived: true }, { quiet: true }).then(function (g) { return { classes: r.classes, removed: g.classes || [] }; });
+    });
+    if ((m = /^cls:(.+)$/.exec(key))) return API.call('class.get', { classId: m[1] }, { quiet: true }).then(function (r) { return { cls: r.cls, pupils: r.pupils }; });
+    if ((m = /^results:(.+)$/.exec(key))) return API.call('results.class', { classId: m[1] }, { quiet: true });
+    if ((m = /^quiz:(.+)@(\d+)$/.exec(key))) return API.call('quiz.get', { quizId: m[1], version: Number(m[2]) }, { quiet: true });
+    return Promise.reject(new Error('Something went wrong. Please try again.'));
+  }
+  function keep(key, v) {
+    kept[key] = v; keptAt[key] = Date.now(); ver[key] = (ver[key] || 0) + 1;
+    if (key === 'home') drawNav(currentRoute());
+  }
+  function forget(key) { delete kept[key]; delete keptAt[key]; delete asking[key]; ver[key] = (ver[key] || 0) + 1; }
+  /* a fresh copy; a second asker shares the request already on its way */
+  function ask(key) {
+    if (asking[key]) return asking[key];
+    var v0 = ver[key] || 0, s0 = session, p;
+    p = fetchOf(key).then(function (v) {
+      if (asking[key] === p) delete asking[key];
+      if (s0 !== session) throw new Error('Please sign in again.');      /* signed out meanwhile: nothing is kept */
+      if ((ver[key] || 0) !== v0) return kept[key] !== undefined ? kept[key] : v;   /* a change answered meanwhile: its copy wins */
+      keep(key, v);
+      return v;
+    }, function (e) { if (asking[key] === p) delete asking[key]; throw e; });
+    asking[key] = p;
+    return p;
+  }
+  function have(key) { return kept[key] !== undefined ? Promise.resolve(kept[key]) : ask(key); }
+  function recent(key) { return /^quiz:/.test(key) || (!!keptAt[key] && Date.now() - keptAt[key] < 15000); }
+  /* the part of a page drawn from kept copies, in one piece; returns paint() for a change's answer */
+  function show(box, keys, draw) {
+    var gen = pageGen, drawn = null;
+    function paint(vals) {
+      if (gen !== pageGen) return;
+      vals = vals || keys.map(function (k) { return kept[k]; });
+      drawn = JSON.stringify(vals); touched = false;
+      UI.clear(box); draw.apply(null, vals);
+    }
+    var ready = keys.every(function (k) { return kept[k] !== undefined; });
+    if (ready) paint();
+    if (!ready || !keys.every(recent)) {
+      Promise.all(keys.map(function (k) { return kept[k] !== undefined && recent(k) ? kept[k] : ask(k); })).then(function (vals) {
+        if (gen !== pageGen) return;
+        if (!ready || (JSON.stringify(vals) !== drawn && !touched)) paint(vals);
+      }, function (e) { if (gen === pageGen && !ready) { UI.clear(box); fail(box, e); } });
+    }
+    return paint;
+  }
+  /* a change's answer: keep what it carries; what an older back office leaves out is asked for while the button still
+     says what it is doing, so the page is never drawn half-new */
+  function took(r, classId) {
+    var waits = [];
+    if (r && r.lists) keep('classes', r.lists); else { forget('classes'); waits.push(ask('classes')); }
+    if (classId) {
+      if (r && r.cls) keep('cls:' + classId, { cls: r.cls, pupils: r.pupils });
+      else { forget('cls:' + classId); waits.push(ask('cls:' + classId)); }
+    }
+    return Promise.all(waits).then(function () { return r; });
+  }
+  function tookQuizzes(r) {
+    if (r && r.quizzes) { keep('quizzes', r.quizzes); return Promise.resolve(r); }
+    forget('quizzes');
+    return ask('quizzes').then(function () { return r; });
+  }
+  function touch() { touched = true; }
   function drawNav(current) {
     var nav = UI.clear($('nav'));
     nav.hidden = false;
     NAV.forEach(function (n) {
       var a = el('a', { href: '#' + n[0], 'aria-current': current === n[0] ? 'page' : null }, n[1]);
-      if (n[0] === 'mark' && state.home && state.home.toMark) a.appendChild(el('span', { class: 'count' }, String(state.home.toMark)));
+      if (n[0] === 'mark' && kept.home && kept.home.toMark) a.appendChild(el('span', { class: 'count' }, String(kept.home.toMark)));
       nav.appendChild(a);
     });
   }
   /* back: [address, words] — a page inside a list has a way back to that list above its heading (Daniel, 9 Nov 2026) */
   function page(title, current, back) {
+    pageGen++; touched = false;
     stopLive();
     if (global.Pupil && Pupil.stop) Pupil.stop();     /* leaves a Try it preview: its watchers and lock go */
     drawNav(current);
@@ -32,25 +115,26 @@
   function fail(app, e) {
     app.appendChild(el('div', { class: 'notice notice--bad' }, e && e.message ? e.message : String(e)));
   }
-  function refreshHome() { return API.call('home', {}, { quiet: true }).then(function (r) { state.home = r.home; drawNav(currentRoute()); return r.home; }, function () {}); }
+  /* Today again after a change (the menu's To mark count too); a copy asked for before the change does not count */
+  function refreshHome() { ver.home = (ver.home || 0) + 1; delete asking.home; ask('home').catch(noop); }
   function currentRoute() { return (location.hash.replace(/^#/, '').split('/')[0]) || 'home'; }
-  function loadClasses(force) {
-    if (state.classes && !force) return Promise.resolve(state.classes);
-    return API.call('classes.list').then(function (r) { state.classes = r.classes; return r.classes; });
-  }
-  function loadQuizzes(force) {
-    if (state.quizzes && !force) return Promise.resolve(state.quizzes);
-    return API.call('quizzes.list').then(function (r) { state.quizzes = r.quizzes; return r.quizzes; });
-  }
 
   T.start = function (me) {
-    state.me = me; state.home = me.home; state.classes = null; state.quizzes = null;
+    state.me = me; session++; kept = {}; keptAt = {}; ver = {}; asking = {};
+    keep('home', me.home);
+    ask('classes').catch(noop); ask('quizzes').catch(noop);      /* every page's lists, asked for together at sign-in */
+    ['input', 'change', 'pointerdown', 'keydown'].forEach(function (n) { $('app').addEventListener(n, touch, true); });
     global.removeEventListener('hashchange', route);
     global.addEventListener('hashchange', route);
     route();
   };
-  /* signing out: no page of this teacher's keeps asking the back office */
-  T.stop = function () { stopLive(); global.removeEventListener('hashchange', route); state = { home: null, classes: null, quizzes: null, liveTimer: null, me: null }; };
+  /* signing out: no page of this teacher's keeps asking the back office, and nothing of theirs stays in memory */
+  T.stop = function () {
+    stopLive(); global.removeEventListener('hashchange', route);
+    ['input', 'change', 'pointerdown', 'keydown'].forEach(function (n) { $('app').removeEventListener(n, touch, true); });
+    session++; pageGen++; kept = {}; keptAt = {}; ver = {}; asking = {};
+    state = { liveTimer: null, me: null };
+  };
   function route() {
     var parts = location.hash.replace(/^#/, '').split('/'), r = parts[0] || 'home';
     var views = { home: home, run: run, live: live, mark: mark, results: results, quizzes: quizzes, quiz: quizPage,
@@ -61,10 +145,15 @@
 
   /* ── Today ─────────────────────────────────────────────── */
   function home() {
-    var app = page('Today', 'home'), h = state.home || {};
+    var app = page('Today', 'home');
     var full = (state.me && state.me.name) || '', name = /^(Mr|Mrs|Ms|Miss|Dr|Mx)\.?\s/.test(full) ? full : full.split(' ')[0];
     app.appendChild(el('div', { class: 'head' }, [el('h1', {}, name ? 'Hello, ' + name : 'Today'),
       el('a', { class: 'btn btn--primary', href: '#run' }, 'Run a quiz')]));
+    var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
+    app.appendChild(box);
+    show(box, ['home'], function (h) { drawHome(box, h || {}); });
+  }
+  function drawHome(app, h) {
     if (h.julyNotice) app.appendChild(el('div', { class: 'notice notice--warn' }, h.julyNotice));
     if (!h.classes || !h.quizzes) {
       app.appendChild(el('section', { class: 'panel' }, [el('h2', {}, 'Start here'),
@@ -113,7 +202,6 @@
       rec.appendChild(l3);
       app.appendChild(rec);
     }
-    refreshHome();
   }
 
   /* ── Run a quiz ────────────────────────────────────────── */
@@ -122,9 +210,8 @@
     app.appendChild(el('h1', {}, 'Run a quiz'));
     var box = el('section', { class: 'panel' }, el('p', { class: 'muted' }, 'Loading your quizzes and classes…'));
     app.appendChild(box);
-    Promise.all([loadQuizzes(true), loadClasses(true)]).then(function (res) {
-      var qz = res[0].filter(function (q) { return !q.inBin; }), cl = res[1];
-      UI.clear(box);
+    show(box, ['quizzes', 'classes'], function (allQuizzes, lists) {
+      var qz = allQuizzes.filter(function (q) { return !q.inBin; }), cl = lists.classes;
       if (!qz.length || !cl.length) {
         box.appendChild(el('p', {}, !qz.length ? ['You have no quiz yet. ', el('a', { href: '#add' }, 'Add one from a Google Form'), '.']
                                                : ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one from Google Classroom'), '.']));
@@ -152,8 +239,9 @@
       go.addEventListener('click', function () {
         var q = qz.filter(function (x) { return x.quizId === quizSel.value; })[0];
         var opensAt = when.value === 'later' && at.value ? new Date(at.value).getTime() : 0;
-        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt }), 'The quiz is open for the class.')
-          .then(function (r) { refreshHome(); location.hash = '#live/' + r.sittingId; }, function () {});
+        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt })
+          .then(function (r) { if (r.live) keep('live:' + r.sittingId, r.live); return r; }), 'The quiz is open for the class.')
+          .then(function (r) { refreshHome(); location.hash = '#live/' + r.sittingId; }, noop);
       });
       box.appendChild(el('div', { class: 'fields' }, [
         el('label', { class: 'field' }, ['Quiz', quizSel]), el('label', { class: 'field' }, ['Class', clsSel]),
@@ -161,7 +249,7 @@
       box.appendChild(info);
       box.appendChild(el('div', { class: 'row' }, [go]));
       box.appendChild(el('p', { class: 'small' }, 'Pupils open nlcsbiology.com/quiz-hall on a laptop in Chrome, sign in, and see this quiz. Pin that address once in each Google Classroom.'));
-    }, function (e) { UI.clear(box); fail(box, e); });
+    });
   }
 
   /* ── the live page ─────────────────────────────────────── */
@@ -173,9 +261,9 @@
     var app = page('Live', 'home', ['#home', 'Today']);
     var head = el('div', { class: 'head' }), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
     app.appendChild(head); app.appendChild(top); app.appendChild(body);
-    var last = null;
+    var last = null, seq = 0, barrier = 0, acting = 0;
     function draw(r) {
-      last = r;
+      last = r; keep('live:' + sid, r);
       var s = r.sitting, now = r.now, open = s.state === 'open';
       UI.clear(head);
       head.appendChild(el('div', {}, [el('h1', {}, s.title), el('p', { class: 'small' }, s.className + ' · ' + s.minutes + ' minutes · ' +
@@ -186,7 +274,7 @@
         close.addEventListener('click', function () {
           var writing = r.pupils.filter(function (p) { return p.status === 'writing' || p.status === 'locked'; }).length;
           if (!window.confirm('Close the quiz now?' + (writing ? ' ' + UI.plural(writing, 'pupil is', 'pupils are') + ' still writing: their saved answers are handed in.' : ''))) return;
-          UI.act(close, 'Closing…', API.call('sitting.close', { sittingId: sid }), 'The quiz is closed.').then(load, function () {});
+          act(close, 'Closing…', API.call('sitting.close', { sittingId: sid }), 'The quiz is closed.', true);
         });
         acts.appendChild(close);
       }
@@ -194,8 +282,8 @@
       if (s.released || s.state !== 'open') {
         var rel = el('button', { class: 'btn', type: 'button' }, s.released ? 'Hide the answers again' : 'Release the answers');
         rel.addEventListener('click', function () {
-          UI.act(rel, s.released ? 'Hiding…' : 'Releasing…', API.call('sitting.release', { sittingId: sid, release: !s.released }),
-                 s.released ? 'Pupils no longer see the answers.' : 'Pupils can now see the right answers and your comments.').then(load, function () {});
+          act(rel, s.released ? 'Hiding…' : 'Releasing…', API.call('sitting.release', { sittingId: sid, release: !s.released }),
+              s.released ? 'Pupils no longer see the answers.' : 'Pupils can now see the right answers and your comments.', true);
         });
         acts.appendChild(rel);
       }
@@ -221,12 +309,12 @@
         var actions = el('td', { class: 'row' });
         if (p.status === 'locked') {
           var ub = el('button', { class: 'btn btn--small btn--primary', type: 'button' }, 'Unlock');
-          ub.addEventListener('click', function () { UI.act(ub, 'Unlocking…', API.call('sitting.unlock', { sittingId: sid, email: p.email }), p.name + ' is unlocked.').then(load, function () {}); });
+          ub.addEventListener('click', function () { act(ub, 'Unlocking…', API.call('sitting.unlock', { sittingId: sid, email: p.email }), p.name + ' is unlocked.'); });
           actions.appendChild(ub);
         }
         if (open && p.status !== 'handed') {
           var eb = el('button', { class: 'btn btn--small', type: 'button' }, '+5 min');
-          eb.addEventListener('click', function () { UI.act(eb, 'Adding…', API.call('sitting.extra', { sittingId: sid, email: p.email, minutes: 5 }), p.name + ' has 5 more minutes.').then(load, function () {}); });
+          eb.addEventListener('click', function () { act(eb, 'Adding…', API.call('sitting.extra', { sittingId: sid, email: p.email, minutes: 5 }), p.name + ' has 5 more minutes.'); });
           actions.appendChild(eb);
         }
         cells.push(actions);
@@ -235,9 +323,23 @@
       tbl.appendChild(tb);
       UI.clear(body); body.appendChild(tbl);
     }
+    /* a check that left before a change's answer was drawn is older than it, so it is not drawn (barrier); none is drawn
+       while a button is working, or the redraw would wipe its "…ing" and invite a second press (memory dashboard-busy-states) */
     function load() {
-      return API.call('sitting.live', { sittingId: sid }, { quiet: !!last }).then(draw, function (e) { if (!last) { UI.clear(body); fail(body, e); } });
+      var sent = ++seq;
+      return API.call('sitting.live', { sittingId: sid }, { quiet: !!last }).then(function (r) {
+        if (sent <= barrier || acting) return;
+        barrier = sent; draw(r);
+      }, function (e) { if (!last) { UI.clear(body); fail(body, e); } });
     }
+    /* a change's answer carries the live page (1_Teacher.gs _thenLive_), drawn with the "done" message */
+    function act(btn, working, call, done, home) {
+      acting++;
+      UI.act(btn, working, call.then(function (r) { return r.live || API.call('sitting.live', { sittingId: sid }, { quiet: true }); }), done)
+        .then(function (r) { acting--; barrier = ++seq; draw(r); if (home) refreshHome(); }, function () { acting--; });
+    }
+    /* a copy from the last half minute (the Start's answer) is drawn at once; the first check follows straight away */
+    if (kept['live:' + sid] && Date.now() - keptAt['live:' + sid] < 30000) draw(kept['live:' + sid]);
     load();
     state.liveTimer = setInterval(function () { if (!document.hidden) load(); }, 5000);
   }
@@ -388,12 +490,21 @@
 
   /* ── Results (drawn by analysis.js) ────────────────────── */
   function results(classId, view, extra) {
-    var app = page('Results', 'results');
-    loadClasses().then(function (cl) {
-      if (!cl.length) { app.appendChild(el('h1', {}, 'Results')); app.appendChild(el('p', {}, ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one'), '.'])); return; }
+    var app = page('Results', 'results'), gen = pageGen;
+    var box = el('div', {}, el('p', { class: 'muted' }, 'Loading results…'));
+    app.appendChild(box);
+    if (classId && kept['results:' + classId] === undefined) ask('results:' + classId).catch(noop);   /* with the class list, not after it */
+    function go(lists) {
+      if (gen !== pageGen) return;
+      var cl = lists.classes;
+      if (!cl.length) { UI.clear(box); box.appendChild(el('h1', {}, 'Results')); box.appendChild(el('p', {}, ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one'), '.'])); return; }
       var id = classId && cl.some(function (c) { return c.id === classId; }) ? classId : cl[0].id;   /* an old link to a removed class opens the first */
-      global.Analysis.draw(app, { classes: cl, classId: id, view: view || 'class', extra: extra });
-    }, function (e) { fail(app, e); });
+      show(box, ['results:' + id], function (r) {
+        global.Analysis.draw(box, { classes: kept.classes ? kept.classes.classes : cl, classId: id, view: view || 'class', extra: extra, data: r });
+      });
+    }
+    if (kept.classes) go(kept.classes);
+    else have('classes').then(go, function (e) { if (gen === pageGen) { UI.clear(box); fail(box, e); } });
   }
 
   /* ── My quizzes ────────────────────────────────────────── */
@@ -402,8 +513,7 @@
     app.appendChild(el('div', { class: 'head' }, [el('h1', {}, 'My quizzes'), el('a', { class: 'btn btn--primary', href: '#add' }, 'Add a quiz from a Google Form')]));
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
-    loadQuizzes(true).then(function (qz) {
-      UI.clear(box);
+    show(box, ['quizzes'], function (qz) {
       var live = qz.filter(function (q) { return !q.inBin; }), bin = qz.filter(function (q) { return q.inBin; });
       if (!live.length) box.appendChild(el('p', { class: 'muted' }, 'Your library is empty. Add a quiz from a Google Form you edit.'));
       else {
@@ -427,7 +537,7 @@
         });
         box.appendChild(bl);
       }
-    }, function (e) { UI.clear(box); fail(box, e); });
+    });
   }
 
   /* add a quiz from a Google Form, or import the same form again as a new version */
@@ -510,7 +620,7 @@
     var save = el('button', { class: 'btn btn--primary', type: 'button' }, quizId ? 'Save as a new version' : 'Add to my library');
     save.addEventListener('click', function () {
       UI.act(save, 'Saving…', API.call('quiz.save', { quiz: quiz, formId: formId, quizId: quizId || undefined }), 'The quiz is in your library.')
-        .then(function (r) { state.quizzes = null; refreshHome(); location.hash = '#quiz/' + r.quizId + '/' + r.version; }, function () {});
+        .then(function (r) { forget('quizzes'); refreshHome(); location.hash = '#quiz/' + r.quizId + '/' + r.version; }, noop);
     });
     panel.appendChild(el('div', { class: 'row' }, [save, el('a', { class: 'btn', href: '#quizzes' }, 'Cancel')]));
     out.appendChild(panel);
@@ -521,10 +631,9 @@
     var app = page('Quiz', 'quizzes', ['#quizzes', 'My quizzes']);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
-    Promise.all([API.call('quiz.get', { quizId: quizId, version: Number(version) }), loadQuizzes()]).then(function (res) {
-      var r = res[0], meta = res[1].filter(function (q) { return q.quizId === quizId; })[0] || { versions: [], sharedWith: [] };
+    show(box, ['quiz:' + quizId + '@' + Number(version), 'quizzes'], function (r, all) {
+      var meta = all.filter(function (q) { return q.quizId === quizId; })[0] || { versions: [], sharedWith: [] };
       var quiz = r.quiz, v = meta.versions.filter(function (x) { return x.version === Number(version); })[0] || {};
-      UI.clear(box);
       var vs = el('select', { 'aria-label': 'Version' }, meta.versions.map(function (x) {
         return el('option', { value: x.version, selected: x.version === Number(version) ? true : null }, 'Version ' + x.version + ' · ' + UI.date(x.saved) + (x.inBin ? ' (bin)' : ''));
       }));
@@ -541,20 +650,20 @@
           var now = (meta.sharedWith || []).join(', ');
           var val = window.prompt('Share this quiz with colleagues: type their school addresses or a department\'s name (for example Physics), separated by commas. They can run it; only you can change it. Results are never shared.', now);
           if (val === null) return;
-          UI.act(share, 'Sharing…', API.call('quiz.share', { quizId: quizId, sharedWith: val }), val.trim() ? 'Shared.' : 'No longer shared.').then(function () { state.quizzes = null; }, function () {});
+          UI.act(share, 'Sharing…', API.call('quiz.share', { quizId: quizId, sharedWith: val }).then(tookQuizzes), val.trim() ? 'Shared.' : 'No longer shared.').then(noop, noop);
         });
         acts.appendChild(share);
         var bin = el('button', { class: 'btn btn--danger', type: 'button' }, v.inBin ? 'Take out of the bin' : 'Move to the bin');
         bin.addEventListener('click', function () {
-          UI.act(bin, '…', API.call('quiz.bin', { quizId: quizId, version: Number(version), inBin: !v.inBin }), v.inBin ? 'Back in your library.' : 'Moved to the bin. You can take it out again.')
-            .then(function () { state.quizzes = null; location.hash = '#quizzes'; }, function () {});
+          UI.act(bin, v.inBin ? 'Taking out…' : 'Moving…', API.call('quiz.bin', { quizId: quizId, version: Number(version), inBin: !v.inBin }).then(tookQuizzes), v.inBin ? 'Back in your library.' : 'Moved to the bin. You can take it out again.')
+            .then(function () { location.hash = '#quizzes'; }, noop);
         });
         acts.appendChild(bin);
         if (v.inBin) {
           var del = el('button', { class: 'btn btn--danger', type: 'button' }, 'Remove for good');
           del.addEventListener('click', function () {
             if (!window.confirm('Remove this version for good? This cannot be undone.')) return;
-            UI.act(del, 'Removing…', API.call('quiz.delete', { quizId: quizId, version: Number(version) }), 'Removed.').then(function () { state.quizzes = null; location.hash = '#quizzes'; }, function () {});
+            UI.act(del, 'Removing…', API.call('quiz.delete', { quizId: quizId, version: Number(version) }).then(function (r) { forget('quiz:' + quizId + '@' + Number(version)); return tookQuizzes(r); }), 'Removed.').then(function () { location.hash = '#quizzes'; }, noop);
           });
           acts.appendChild(del);
         }
@@ -562,7 +671,7 @@
       box.appendChild(el('div', { class: 'head' }, [el('div', {}, [el('h1', {}, quiz.title), el('p', { class: 'small' },
         (r.mine ? 'Yours' : 'Shared by ' + meta.owner) + ((meta.sharedWith || []).length && r.mine ? ' · shared with ' + meta.sharedWith.join(', ') : ''))]), acts]));
       box.appendChild(questionList(quiz));
-    }, function (e) { UI.clear(box); fail(box, e); });
+    });
   }
   function questionList(quiz) {
     var wrap = el('div'), n = 0;
@@ -621,7 +730,7 @@
     var save = el('button', { class: 'btn btn--primary', type: 'button' }, 'Save as a new version');
     save.addEventListener('click', function () {
       UI.act(save, 'Saving…', API.call('quiz.save', { quiz: copy, quizId: quizId }), 'Saved as a new version.')
-        .then(function (r) { state.quizzes = null; location.hash = '#quiz/' + r.quizId + '/' + r.version; }, function () {});
+        .then(function (r) { forget('quizzes'); location.hash = '#quiz/' + r.quizId + '/' + r.version; }, noop);
     });
     box.appendChild(el('div', { class: 'row' }, [save, el('a', { class: 'btn', href: location.hash, onclick: function () { setTimeout(route, 0); } }, 'Cancel')]));
   }
@@ -646,84 +755,81 @@
         UI.clear(pick);
         if (!courses.length) { pick.appendChild(el('div', { class: 'notice' }, 'Google Classroom shows no active class that you teach.')); return; }
         var have = {};
-        (state.classes || []).forEach(function (c) { if (c.courseId) have[c.courseId] = c; });
+        (kept.classes ? kept.classes.classes : []).forEach(function (c) { if (c.courseId) have[c.courseId] = c; });
         var list = el('div', { class: 'list' });
         courses.forEach(function (c) {
           var b = el('button', { class: 'btn btn--small' + (have[c.id] ? '' : ' btn--primary'), type: 'button' }, have[c.id] ? 'Check again' : 'Import');
           b.addEventListener('click', function () {
             UI.act(b, 'Importing…', GoogleData.students(c.id).then(function (pupils) {
               return API.call('class.save', { classId: have[c.id] ? have[c.id].id : undefined, name: have[c.id] ? have[c.id].name : (c.name + (c.section ? ' ' + c.section : '')), courseId: c.id, pupils: pupils })
-                .then(function (r) { return { r: r, n: pupils.length }; });
-            })).then(function (x) { UI.toast(UI.plural(x.n, 'pupil') + ' imported.'); state.classes = null; refreshHome(); location.hash = '#cls/' + x.r.classId; }, function () {});
+                .then(function (r) { return took(r, r.classId); }).then(function (r) { return { r: r, n: pupils.length }; });
+            })).then(function (x) { UI.toast(UI.plural(x.n, 'pupil') + ' imported.'); refreshHome(); location.hash = '#cls/' + x.r.classId; }, noop);
           });
           list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, c.section)]), b]));
         });
         pick.appendChild(el('section', { class: 'panel' }, [el('h2', {}, 'Your classes in Google Classroom'), list]));
       }, function () {});
     });
-    loadClasses(true).then(function (cl) {
-      UI.clear(box);
-      if (!cl.length) box.appendChild(el('p', { class: 'muted' }, 'No class yet. Import one from Google Classroom.'));
+    /* both lists in one piece (before 10 Nov 2026 the removed classes came in a second answer, a moment later) */
+    var paint = show(box, ['classes'], function (lists) {
+      var cl = lists.classes, gone = lists.removed || [];
+      if (!cl.length) box.appendChild(el('p', { class: 'muted' }, gone.length ? 'No class in use. Import one from Google Classroom, or bring one back below.' : 'No class yet. Import one from Google Classroom.'));
       else {
         var tb = el('tbody');
         cl.forEach(function (c) {
           var rm = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Remove ' + c.name }, 'Remove');
-          rm.addEventListener('click', function (ev) { ev.stopPropagation(); removeClass(c, rm, classes); });
+          rm.addEventListener('click', function (ev) { ev.stopPropagation(); removeClass(c, rm, function () { paint(); }); });
           tb.appendChild(el('tr', { class: 'is-click', onclick: function () { location.hash = '#cls/' + c.id; } }, [el('td', {}, c.name), el('td', { class: 'num' }, String(c.pupils)),
             el('td', { class: 'small' }, c.checked ? 'Checked against Classroom ' + UI.date(c.checked) : ''), el('td', { class: 'act' }, rm)]));
         });
         box.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, [el('th', {}, 'Class'), el('th', { class: 'num' }, 'Pupils'), el('th', {}, ''), el('th', {}, '')])), tb])));
       }
-      API.call('classes.list', { archived: true }, { quiet: true }).then(function (r) {
-        var gone = r.classes || [];
-        if (!gone.length) return;
-        var list = el('div', { class: 'list' });
-        gone.forEach(function (c) {
-          var b = el('button', { class: 'btn btn--small', type: 'button' }, 'Bring back');
-          b.addEventListener('click', function () { bringBack(c, b, classes); });
-          var x = el('button', { class: 'btn btn--small btn--danger', type: 'button', 'aria-label': 'Delete ' + c.name + ' for good' }, 'Delete for good');
-          x.addEventListener('click', function () { deleteClass(c, x, classes); });
-          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, UI.plural(c.pupils, 'pupil'))]),
-            el('div', { class: 'row' }, [b, x])]));
-        });
-        box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h2', {}, 'Removed classes'),
-          el('p', { class: 'small' }, 'Their results are kept. Bring a class back to run a quiz for it or to see its results. Delete for good empties it from Quiz Hall.'), list]));
-      }, function () {});
-    }, function (e) { UI.clear(box); fail(box, e); });
+      if (!gone.length) return;
+      var list = el('div', { class: 'list' });
+      gone.forEach(function (c) {
+        var b = el('button', { class: 'btn btn--small', type: 'button' }, 'Bring back');
+        b.addEventListener('click', function () { bringBack(c, b, function () { paint(); }); });
+        var x = el('button', { class: 'btn btn--small btn--danger', type: 'button', 'aria-label': 'Delete ' + c.name + ' for good' }, 'Delete for good');
+        x.addEventListener('click', function () { deleteClass(c, x, function () { paint(); }); });
+        list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, UI.plural(c.pupils, 'pupil'))]),
+          el('div', { class: 'row' }, [b, x])]));
+      });
+      box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h2', {}, 'Removed classes'),
+        el('p', { class: 'small' }, 'Their results are kept. Bring a class back to run a quiz for it or to see its results. Delete for good empties it from Quiz Hall.'), list]));
+    });
   }
   /* Remove puts a class aside (the Classes tab's "archived" column, class.archive): nothing is deleted, its results stay
      in the Sheet, a quiz already running for it goes on, and Bring back undoes it */
   function removeClass(c, btn, after) {
     if (!window.confirm('Remove ' + c.name + ' from My classes?\n\nNothing is deleted: its results are kept, and you can bring it back under "Removed classes" at the bottom of My classes. Google Classroom does not change.')) return;
-    UI.act(btn, 'Removing…', API.call('class.archive', { classId: c.id, archived: true }), c.name + ' is removed from My classes.')
-      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+    UI.act(btn, 'Removing…', API.call('class.archive', { classId: c.id, archived: true }).then(function (r) { return took(r, c.id); }), c.name + ' is removed from My classes.')
+      .then(function () { refreshHome(); after(); }, noop);
   }
   /* Delete for good: only from Removed classes (class.delete refuses any other); the class, its pupil list and every
      result of its quizzes leave the Sheet; the quizzes stay in the library */
   function deleteClass(c, btn, after) {
     if (!window.confirm('Delete ' + c.name + ' for good?\n\nThis deletes its pupil list and every result of its quizzes from Quiz Hall: scores, written answers and comments. It cannot be undone. Your quizzes stay in My quizzes.')) return;
-    UI.act(btn, 'Deleting…', API.call('class.delete', { classId: c.id }), c.name + ' is deleted for good.')
-      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+    UI.act(btn, 'Deleting…', API.call('class.delete', { classId: c.id }).then(function (r) { forget('cls:' + c.id); forget('results:' + c.id); return took(r); }), c.name + ' is deleted for good.')
+      .then(function () { refreshHome(); after(); }, noop);
   }
   function bringBack(c, btn, after) {
-    UI.act(btn, 'Bringing back…', API.call('class.archive', { classId: c.id, archived: false }), c.name + ' is back in My classes.')
-      .then(function () { state.classes = null; refreshHome(); after(); }, function () {});
+    UI.act(btn, 'Bringing back…', API.call('class.archive', { classId: c.id, archived: false }).then(function (r) { return took(r, c.id); }), c.name + ' is back in My classes.')
+      .then(function () { refreshHome(); after(); }, noop);
   }
   function classPage(classId) {
     var app = page('Class', 'classes', ['#classes', 'My classes']);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
-    function load() {
-      API.call('class.get', { classId: classId }).then(function (r) {
-        UI.clear(box);
+    var paint = show(box, ['cls:' + classId], function (r) {
         var c = r.cls;
         var acts = el('div', { class: 'row' }, [el('a', { class: 'btn btn--primary', href: '#run' }, 'Run a quiz'), el('a', { class: 'btn', href: '#results/' + c.id }, 'Results')]);
         if (c.courseId) {
           var chk = el('button', { class: 'btn', type: 'button' }, 'Check against Classroom');
           chk.addEventListener('click', function () {
             UI.act(chk, 'Checking…', GoogleData.students(c.courseId).then(function (pupils) {
-              return API.call('class.save', { classId: c.id, name: c.name, subject: c.subject, courseId: c.courseId, pupils: pupils }).then(function () { return pupils.length; });
-            })).then(function (n) { UI.toast('The list now matches Google Classroom: ' + UI.plural(n, 'pupil') + '.'); load(); }, function () {});
+              return API.call('class.save', { classId: c.id, name: c.name, subject: c.subject, courseId: c.courseId, pupils: pupils })
+                .then(function (r) { return took(r, c.id); }).then(function () { return pupils.length; });
+            })).then(function (n) { UI.toast('The list now matches Google Classroom: ' + UI.plural(n, 'pupil') + '.'); paint(); }, noop);
           });
           acts.appendChild(chk);
         }
@@ -734,12 +840,12 @@
           var ex = el('select', { 'aria-label': 'Extra time for ' + p.name }, [0, 10, 25, 50].map(function (v) { return el('option', { value: v, selected: p.extra === v ? true : null }, v ? '+' + v + ' %' : 'None'); }));
           if ([0, 10, 25, 50].indexOf(p.extra) < 0) ex.appendChild(el('option', { value: p.extra, selected: true }, '+' + p.extra + ' %'));
           ex.addEventListener('change', function () {
-            API.call('class.pupil', { classId: c.id, op: 'extra', email: p.email, extra: Number(ex.value) }).then(function () { UI.toast('Extra time saved for ' + p.name + '.'); }, function (e) { UI.toast(e.message, true); });
+            API.call('class.pupil', { classId: c.id, op: 'extra', email: p.email, extra: Number(ex.value) }).then(function (r) { took(r, c.id).catch(noop); UI.toast('Extra time saved for ' + p.name + '.'); }, function (e) { UI.toast(e.message, true); });
           });
           var rm = el('button', { class: 'btn btn--small', type: 'button' }, 'Remove');
           rm.addEventListener('click', function () {
             if (!window.confirm('Take ' + p.name + ' off this class in Quiz Hall? Google Classroom does not change.')) return;
-            UI.act(rm, 'Removing…', API.call('class.pupil', { classId: c.id, op: 'remove', email: p.email }), p.name + ' is off the list.').then(load, function () {});
+            UI.act(rm, 'Removing…', API.call('class.pupil', { classId: c.id, op: 'remove', email: p.email }).then(function (r) { return took(r, c.id); }), p.name + ' is off the list.').then(function () { paint(); }, noop);
           });
           tb.appendChild(el('tr', {}, [el('td', {}, p.name), el('td', { class: 'small' }, p.email), el('td', {}, ex), el('td', {}, rm)]));
         });
@@ -747,20 +853,18 @@
         var em = el('input', { type: 'email', placeholder: 'pupil@…' }), nm = el('input', { type: 'text', placeholder: 'Name' });
         var add = el('button', { class: 'btn', type: 'button' }, 'Add a pupil');
         add.addEventListener('click', function () {
-          UI.act(add, 'Adding…', API.call('class.pupil', { classId: c.id, op: 'add', email: em.value, name: nm.value }), 'Added.').then(load, function () {});
+          UI.act(add, 'Adding…', API.call('class.pupil', { classId: c.id, op: 'add', email: em.value, name: nm.value }).then(function (r) { return took(r, c.id); }), 'Added.').then(function () { paint(); }, noop);
         });
         box.appendChild(el('section', { class: 'panel', style: 'margin-top:16px' }, [el('h3', {}, 'Add a pupil by hand'),
           el('div', { class: 'fields' }, [el('label', { class: 'field' }, ['School address', em]), el('label', { class: 'field' }, ['Name', nm]), add]),
           el('p', { class: 'small' }, 'Changes here change Quiz Hall\'s list only. Google Classroom stays as it is.')]));
         var gone = el('button', { class: 'btn btn--small' + (c.archived ? '' : ' btn--danger'), type: 'button' }, c.archived ? 'Bring back this class' : 'Remove this class');
         gone.addEventListener('click', function () {
-          if (c.archived) bringBack(c, gone, load);
+          if (c.archived) bringBack(c, gone, function () { paint(); });
           else removeClass(c, gone, function () { location.hash = '#classes'; });
         });
         box.appendChild(el('div', { class: 'row', style: 'margin-top:16px' }, gone));
-      }, function (e) { UI.clear(box); fail(box, e); });
-    }
-    load();
+    });
   }
 
   /* ── Help, task first ──────────────────────────────────── */
