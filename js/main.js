@@ -46,6 +46,11 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    /* the quiz's own bar sticks just under the top bar, however tall the top bar is (it wraps in a narrow window) */
+    var top = document.querySelector('.top');
+    function topHeight() { document.documentElement.style.setProperty('--toph', top.offsetHeight + 'px'); }
+    topHeight();
+    if (global.ResizeObserver) new ResizeObserver(topHeight).observe(top); else global.addEventListener('resize', topHeight);
     SignIn.setUp(CFG.googleClientId);
     SignIn.on(function (v, here) {
       if (v && !started) enter();

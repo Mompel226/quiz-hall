@@ -52,10 +52,13 @@ p { margin: 0 0 10px; }
 /* the top bar */
 .top { position: sticky; top: 0; z-index: 20; background: var(--card); border-top: 3px solid var(--accent); border-bottom: 1px solid var(--line); }
 .top__in { max-width: 1240px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.maker { margin: 0; font-size: 12px; color: var(--ink-2); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
-.maker strong { color: var(--ink); font-weight: 600; }
-.brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
-.brand .logo { width: 28px; height: 28px; }
+/* Quiz Hall and its mark first and larger; the maker's name below it, smaller (Daniel, 10 Nov 2026) */
+.brand { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); text-decoration: none; }
+.brand .logo { width: 42px; height: 42px; }
+.brand__text { display: flex; flex-direction: column; line-height: 1.15; }
+.brand__name { font-weight: 700; font-size: 23px; letter-spacing: -0.015em; }
+.maker { font-size: 12px; color: var(--ink-2); white-space: nowrap; margin-top: 2px; }
+.maker strong { color: var(--ink-2); font-weight: 600; }
 /* the mark: a quiz sheet with one answer ticked, drawn in the accent colour (bright and dark) */
 .logo { display: block; flex: none; }
 .logo__tile { fill: var(--accent); }
@@ -164,7 +167,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 .topic-in { min-width: 140px; }
 
 /* the pupil's quiz */
-.quizhead { position: sticky; top: 49px; z-index: 10; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; box-shadow: var(--shadow); }
+.quizhead { position: sticky; top: var(--toph, 62px); z-index: 10; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; box-shadow: var(--shadow); }
 .timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 20px; }
 .timer.timer--quiet { font-size: 14px; font-weight: 400; color: var(--ink-2); }
 .timer.is-low { color: var(--bad); }
