@@ -168,7 +168,7 @@
     var list = el('div', { class: 'barlist' });
     stats.forEach(function (st) {
       var label = 'Q' + st.n + ' · ' + short(st.q.title, 70);
-      var fill = el('div', { class: 'barrow__fill', style: 'width:' + (st.share === null ? 0 : st.share) + '%' });
+      var fill = el('div', { class: 'barrow__fill ' + heatClass(st.share), style: 'width:' + (st.share === null ? 0 : st.share) + '%' });
       var row = el('div', { class: 'barrow' }, [el('div', { class: 'barrow__label' }, label), el('div', { class: 'barrow__track' }, fill),
         el('div', { class: 'barrow__val' }, st.share === null ? '–' : round(st.share) + ' %')]);
       tip(row, label + ' · ' + (st.share === null ? 'not marked yet' : round(st.share) + ' % of the marks · ' + st.right + ' of ' + st.marked + ' fully right') + (st.q.topic ? ' · ' + st.q.topic : ''));
@@ -213,7 +213,7 @@
   function topicBars(list) {
     var box = el('div', { class: 'barlist' });
     list.forEach(function (t) {
-      var row = el('div', { class: 'barrow' }, [el('div', { class: 'barrow__label' }, t.name), el('div', { class: 'barrow__track' }, el('div', { class: 'barrow__fill', style: 'width:' + round(t.share) + '%' })),
+      var row = el('div', { class: 'barrow' }, [el('div', { class: 'barrow__label' }, t.name), el('div', { class: 'barrow__track' }, el('div', { class: 'barrow__fill ' + heatClass(t.share), style: 'width:' + round(t.share) + '%' })),
         el('div', { class: 'barrow__val' }, round(t.share) + ' %')]);
       tip(row, t.name + ' · ' + round(t.share) + ' % of ' + t.possible + ' marks · ' + UI.plural(t.questions, 'question'));
       box.appendChild(row);

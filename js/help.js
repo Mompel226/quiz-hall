@@ -9,7 +9,7 @@
   'use strict';
   var H = global.Help = {};
   var el = UI.el;
-  var V = '2';                      /* raise when the pictures in assets/help/ are taken again */
+  var V = '3';                      /* raise when the pictures in assets/help/ are taken again */
 
   /* "Press **Start now** (6)." → text, bold names, and (n) drawn like the pin it points to */
   function rich(s) {
@@ -231,9 +231,9 @@
     box.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
       views([
         { label: 'Class', pic: 't-results-class', alt: 'Results, Class: each pupil\'s percentage in each quiz, and the class average over time',
-          words: 'Each pupil\'s score in each quiz as a percentage: the darker, the higher. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time.' },
+          words: 'Each pupil\'s score in each quiz as a percentage, in colours from red (under 40 %) through orange, yellow and light green to dark green (85 % and over); the colours are shown above the table. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time.' },
         { label: 'Quiz', pic: 't-results-quiz', alt: 'Results, Quiz: each question with the share of marks the class earned and the most common wrong answer',
-          words: 'One quiz: who handed in, the class average and the typical time, then each question from the lowest share of marks, with the wrong answer most pupils chose. **Mark the rest** opens To mark.' },
+          words: 'One quiz: who handed in, the class average and the typical time, then each question from the lowest share of marks, its bar in the same colours, with the wrong answer most pupils chose. **Mark the rest** opens To mark.' },
         { label: 'Topics', pic: 't-results-topics', alt: 'Results, Topics: the share of marks in each topic, weakest first',
           words: 'Every quiz this class has sat, by topic, weakest first. Topics come from your form\'s sections, or what you typed when you added the quiz.' },
         { label: 'Pupil', pic: 't-results-pupil', alt: 'Results, Pupil: one pupil against the class average, quiz by quiz',
