@@ -52,6 +52,10 @@ p { margin: 0 0 10px; }
 /* the top bar */
 .top { position: sticky; top: 0; z-index: 20; background: var(--card); border-top: 3px solid var(--accent); border-bottom: 1px solid var(--line); }
 .top__in { max-width: 1240px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+/* the way back to the Apps shelf, teachers only: a solid pill (memory header-footer-credit) */
+.up { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.up:hover { filter: brightness(1.08); }
+.up:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Quiz Hall and its mark first and larger; the maker's name below it, smaller (Daniel, 10 Nov 2026) */
 .brand { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); text-decoration: none; }
 .brand .logo { width: 42px; height: 42px; }

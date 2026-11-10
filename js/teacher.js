@@ -124,6 +124,7 @@
     keep('home', me.home);
     ask('classes').catch(noop); ask('quizzes').catch(noop);      /* every page's lists, asked for together at sign-in */
     ['input', 'change', 'pointerdown', 'keydown'].forEach(function (n) { $('app').addEventListener(n, touch, true); });
+    $('upApps').hidden = false;                      /* teachers came from the hub's Apps shelf: the way back */
     global.removeEventListener('hashchange', route);
     global.addEventListener('hashchange', route);
     route();
@@ -134,6 +135,7 @@
     ['input', 'change', 'pointerdown', 'keydown'].forEach(function (n) { $('app').removeEventListener(n, touch, true); });
     session++; pageGen++; kept = {}; keptAt = {}; ver = {}; asking = {};
     state = { liveTimer: null, me: null };
+    $('upApps').hidden = true;
   };
   function route() {
     var parts = location.hash.replace(/^#/, '').split('/'), r = parts[0] || 'home';
