@@ -252,4 +252,27 @@ svg.chart .endlabel { fill: var(--ink); font-weight: 600; }
   .quizhead { top: 0; }
   .barrow { grid-template-columns: minmax(90px, 1fr) minmax(0, 1.2fr) 48px; }
 }
+/* My quizzes: each teacher's own groups, folded by a press on the name (10 Nov 2026) */
+.groupbar { margin-bottom: 12px; }
+.groupbar__done { margin-left: auto; }
+.group { margin: 0 0 14px; }
+.group__head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 6px; margin: 0 0 6px; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; font-size: 17px; text-align: left; border-radius: 6px; }
+button.group__head { cursor: pointer; }
+button.group__head:hover { background: var(--line-2); }
+button.group__head:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.group__chev { display: inline-block; width: 1em; color: var(--ink-2); font-size: 15px; text-align: center; transition: transform .15s; }
+.group__head[aria-expanded="true"] .group__chev { transform: rotate(90deg); }
+.group__count { font-weight: 400; font-size: 14px; color: var(--ink-3); white-space: nowrap; }
+.group__head--edit { flex-wrap: wrap; }
+.group__head--edit input { flex: 1 1 200px; font-weight: 600; }
+.grouppick { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.grouppick select { max-width: 220px; }
+.pupilsway { justify-content: space-between; }
+.pupilsway p { flex: 1 1 280px; margin: 0; }
+@media (prefers-reduced-motion: reduce) { .group__chev { transition: none; } }
+@media (max-width: 560px) {
+  .list__item:has(.grouppick) { flex-wrap: wrap; }
+  .grouppick { width: 100%; }
+  .grouppick select { flex: 1 1 auto; max-width: none; }
+}
 @media print { .top, .foot, .nav, .btn { display: none !important; } body { background: #fff; } }

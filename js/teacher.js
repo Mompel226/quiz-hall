@@ -25,6 +25,9 @@
     var m;
     if (key === 'home') return API.call('home', {}, { quiet: true }).then(function (r) { return r.home; });
     if (key === 'quizzes') return API.call('quizzes.list', {}, { quiet: true }).then(function (r) { return r.quizzes; });
+    /* the teacher's own quiz groups; a back office before 10 Nov 2026 has none */
+    if (key === 'groups') return API.call('groups.get', {}, { quiet: true }).then(function (r) { return cleanGroups(r.groups); },
+      function (e) { if (/unknown action/.test(e && e.message || '')) return cleanGroups(null); throw e; });
     if (key === 'classes') return API.call('classes.list', {}, { quiet: true }).then(function (r) {
       if (r.removed) return { classes: r.classes, removed: r.removed };
       /* a back office before 10 Nov 2026 gives the removed classes in a second answer */
@@ -122,7 +125,7 @@
   T.start = function (me) {
     state.me = me; session++; kept = {}; keptAt = {}; ver = {}; asking = {};
     keep('home', me.home);
-    ask('classes').catch(noop); ask('quizzes').catch(noop);      /* every page's lists, asked for together at sign-in */
+    ask('classes').catch(noop); ask('quizzes').catch(noop); ask('groups').catch(noop);   /* every page's lists, asked for together at sign-in */
     ['input', 'change', 'pointerdown', 'keydown'].forEach(function (n) { $('app').addEventListener(n, touch, true); });
     $('upApps').hidden = false;                      /* teachers came from the hub's Apps shelf: the way back */
     global.removeEventListener('hashchange', route);
@@ -212,16 +215,19 @@
     app.appendChild(el('h1', {}, 'Run a quiz'));
     var box = el('section', { class: 'panel' }, el('p', { class: 'muted' }, 'Loading your quizzes and classes…'));
     app.appendChild(box);
-    show(box, ['quizzes', 'classes'], function (allQuizzes, lists) {
+    show(box, ['quizzes', 'classes', 'groups'], function (allQuizzes, lists, groups) {
       var qz = allQuizzes.filter(function (q) { return !q.inBin; }), cl = lists.classes;
       if (!qz.length || !cl.length) {
         box.appendChild(el('p', {}, !qz.length ? ['You have no quiz yet. ', el('a', { href: '#add' }, 'Add one from a Google Form'), '.']
                                                : ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one from Google Classroom'), '.']));
         return;
       }
-      var quizSel = el('select', { id: 'rq' }, qz.map(function (q) {
+      var quizOpt = function (q) {
         return el('option', { value: q.quizId, selected: q.quizId === preQuiz ? true : null }, q.title + (q.mine ? '' : ' (shared by ' + q.owner.split('@')[0] + ')'));
-      }));
+      };
+      /* in the teacher's own groups, as on My quizzes */
+      var quizSel = el('select', { id: 'rq' }, !groups.g.length ? qz.map(quizOpt) : grouped(qz, groups).filter(function (sec) { return sec.quizzes.length; })
+        .map(function (sec) { return el('optgroup', { label: sec.group ? sec.group.name : 'Not in a group' }, sec.quizzes.map(quizOpt)); }));
       var clsSel = el('select', { id: 'rc' }, cl.map(function (c) { return el('option', { value: c.id }, c.name + ' (' + c.pupils + ')'); }));
       var mins = el('input', { type: 'number', id: 'rm', min: 1, max: 240, value: 20 });
       var when = el('select', { id: 'rw' }, [el('option', { value: 'now' }, 'Now'), el('option', { value: 'later' }, 'At a time I choose')]);
@@ -256,7 +262,8 @@
       box.appendChild(el('h3', {}, 'Test mode'));
       box.appendChild(modeBox);
       box.appendChild(el('div', { class: 'row' }, [go]));
-      box.appendChild(el('p', { class: 'small' }, 'Pupils open nlcsbiology.com/quiz-hall on a laptop in Chrome, sign in, and see this quiz. Pin that address once in each Google Classroom.'));
+      box.appendChild(el('div', { class: 'row pupilsway' }, [el('p', { class: 'small' }, 'Pupils sign in on nlcsbiology.com and the quiz is on its front page, or they open nlcsbiology.com/quiz-hall. Use Chrome on a laptop. Pin the link once in each Google Classroom.'),
+        copyLinkButton()]));
     });
   }
 
@@ -323,6 +330,7 @@
         (open ? (s.opens > now ? 'starts at ' + UI.dateTime(s.opens) : 'pupils can begin until ' + UI.time(s.beginBy)) : 'closed ' + UI.dateTime(s.closed)))]));
       var acts = el('div', { class: 'row' });
       if (open) {
+        acts.appendChild(copyLinkButton());
         var close = el('button', { class: 'btn btn--danger', type: 'button' }, 'Close now');
         close.addEventListener('click', function () {
           var writing = r.pupils.filter(function (p) { return p.status === 'writing' || p.status === 'locked'; }).length;
@@ -562,25 +570,155 @@
   }
 
   /* ── My quizzes ────────────────────────────────────────── */
+  /* Groups (Daniel, 10 Nov 2026: teachers "want to be able to regroup them in groups that are collapsible and expandable",
+     e.g. Topic 1 of physics, Topic 2). Each teacher's own, kept in the back office (1_Teacher.gs _groupsSave_), so they follow
+     the teacher to any computer; which groups are folded is this computer's own. Organise: new group, rename, move up or
+     down, delete (its quizzes are then in no group; no quiz is ever deleted), and a Group choice on each quiz. Each change
+     says Saving… and the page is drawn again from the back office's answer. */
+  function cleanGroups(g) {
+    var out = { g: [], of: {} };
+    if (g && Array.isArray(g.g)) out.g = g.g.filter(function (x) { return x && x.id && x.name; });
+    if (g && g.of && typeof g.of === 'object') Object.keys(g.of).forEach(function (k) { out.of[k] = String(g.of[k]); });
+    return out;
+  }
+  /* the quizzes in the teacher's groups, in their order; "Not in a group" last, when it has quizzes or there is no group */
+  function grouped(qz, groups) {
+    var by = {}, none = [], out = [];
+    groups.g.forEach(function (g) { by[g.id] = []; });
+    qz.forEach(function (q) { var gid = groups.of[q.quizId]; (gid && by[gid] ? by[gid] : none).push(q); });
+    groups.g.forEach(function (g) { out.push({ group: g, quizzes: by[g.id] }); });
+    if (none.length || !groups.g.length) out.push({ group: null, quizzes: none });
+    return out;
+  }
+  function foldKey() { return 'quizhall.folded.' + (state.me && state.me.email || ''); }
+  function foldedNow() { try { return JSON.parse(localStorage.getItem(foldKey()) || '{}') || {}; } catch (e) { return {}; } }
+  function setFolded(id, on) {
+    var f = foldedNow();
+    if (on) f[id] = 1; else delete f[id];
+    try { localStorage.setItem(foldKey(), JSON.stringify(f)); } catch (e) {}
+  }
+  function newGroupId() { return 'g' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
   function quizzes() {
     var app = page('My quizzes', 'quizzes');
     app.appendChild(el('div', { class: 'head' }, [el('h1', {}, 'My quizzes'), el('a', { class: 'btn btn--primary', href: '#add' }, 'Add a quiz from a Google Form')]));
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
-    show(box, ['quizzes'], function (qz) {
+    var organising = false, paint = null;
+    function quizRow(q, groups) {
+      var main = el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, q.title),
+        el('div', { class: 'list__sub' }, [UI.plural(q.questions, 'question') + ' · ' + UI.plural(q.points, 'mark') + ' · version ' + q.version +
+          (q.topics.length ? ' · ' + q.topics.join(', ') : '') + (q.mine ? '' : ' · shared by ' + q.owner.split('@')[0])])]);
+      if (!organising) return el('div', { class: 'list__item' }, [main,
+        el('a', { class: 'btn', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open'),
+        el('a', { class: 'btn btn--primary', href: '#run/' + q.quizId }, 'Run')]);
+      var pick = el('select', { 'aria-label': 'Group for ' + q.title },
+        [el('option', { value: '' }, 'Not in a group')].concat(groups.g.map(function (g) {
+          return el('option', { value: g.id, selected: groups.of[q.quizId] === g.id ? true : null }, g.name);
+        })));
+      pick.addEventListener('change', function () {
+        var next = cleanGroups(groups);
+        if (pick.value) next.of[q.quizId] = pick.value; else delete next.of[q.quizId];
+        save(next, '');
+      });
+      return el('div', { class: 'list__item' }, [main, el('label', { class: 'grouppick' }, ['Group', pick])]);
+    }
+    /* one change: the controls wait, the bar says Saving…, and the page is drawn again from what the back office kept */
+    function save(next, done) {
+      Array.prototype.forEach.call(box.querySelectorAll('button, input, select'), function (x) { x.disabled = true; });
+      var st = $('groupStatus'); if (st) st.textContent = 'Saving…';
+      UI.busy(true);
+      API.call('groups.save', { groups: next }, { quiet: true }).then(function (r) {
+        UI.busy(false);
+        keep('groups', cleanGroups(r.groups));
+        if (paint) paint();
+        var s2 = $('groupStatus'); if (s2) s2.textContent = 'Saved.';
+        if (done) UI.toast(done);
+      }, function (e) {
+        UI.busy(false);
+        if (paint) paint();
+        UI.toast(e && e.message ? e.message : String(e), true);
+      });
+    }
+    function organiseBar(groups) {
+      if (!organising) return el('div', { class: 'row groupbar' }, [el('button', { class: 'btn', type: 'button', onclick: function () { organising = true; paint(); } },
+        groups.g.length ? 'Organise' : 'Organise into groups')]);
+      var name = el('input', { type: 'text', maxlength: 60, placeholder: 'For example: Topic 1', 'aria-label': 'Name of the new group' });
+      var add = el('button', { class: 'btn', type: 'button' }, 'Add the group');
+      function addGroup() {
+        var n = name.value.replace(/\s+/g, ' ').trim();
+        if (!n) { name.focus(); return; }
+        var next = cleanGroups(groups);
+        next.g.push({ id: newGroupId(), name: n });
+        save(next, 'Group added: ' + n + '.');
+      }
+      add.addEventListener('click', addGroup);
+      name.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') addGroup(); });
+      return el('section', { class: 'panel panel--tight groupbar' }, [
+        el('div', { class: 'row' }, [el('strong', {}, 'Organise'), el('span', { class: 'small muted', id: 'groupStatus', 'aria-live': 'polite' }, ''),
+          el('button', { class: 'btn btn--primary groupbar__done', type: 'button', onclick: function () { organising = false; paint(); } }, 'Done')]),
+        el('p', { class: 'small' }, 'Make a group, then choose each quiz\'s group. Deleting a group keeps its quizzes: they go to Not in a group.'),
+        el('div', { class: 'row' }, [name, add])]);
+    }
+    function groupHead(sec, groups, list, idx) {
+      var g = sec.group, n = sec.quizzes.length;
+      if (!organising) {
+        var id = g ? g.id : 'none', open = !foldedNow()[id];
+        list.hidden = !open;
+        var hb = el('button', { class: 'group__head', type: 'button', 'aria-expanded': String(open) }, [
+          el('span', { class: 'group__chev', 'aria-hidden': 'true' }, '▸'),
+          el('span', { class: 'group__name' }, g ? g.name : 'Not in a group'), el('span', { class: 'group__count' }, UI.plural(n, 'quiz', 'quizzes'))]);
+        hb.addEventListener('click', function () {
+          var now = hb.getAttribute('aria-expanded') !== 'true';
+          hb.setAttribute('aria-expanded', String(now)); list.hidden = !now; setFolded(id, !now);
+        });
+        return hb;
+      }
+      if (!g) return el('div', { class: 'group__head group__head--plain' }, [el('span', { class: 'group__name' }, 'Not in a group'), el('span', { class: 'group__count' }, UI.plural(n, 'quiz', 'quizzes'))]);
+      var nm = el('input', { type: 'text', value: g.name, maxlength: 60, 'aria-label': 'Name of the group ' + g.name });
+      nm.addEventListener('change', function () {
+        var v = nm.value.replace(/\s+/g, ' ').trim();
+        if (!v || v === g.name) { nm.value = g.name; return; }
+        var next = cleanGroups(groups);
+        next.g.forEach(function (x) { if (x.id === g.id) x.name = v; });
+        save(next, '');
+      });
+      function move(by) {
+        var next = cleanGroups(groups), k = idx + by;
+        if (k < 0 || k >= next.g.length) return;
+        var t = next.g[idx]; next.g[idx] = next.g[k]; next.g[k] = t;
+        save(next, '');
+      }
+      var up = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Move ' + g.name + ' up', disabled: idx === 0 ? true : null }, '↑');
+      var down = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Move ' + g.name + ' down', disabled: idx === groups.g.length - 1 ? true : null }, '↓');
+      up.addEventListener('click', function () { move(-1); });
+      down.addEventListener('click', function () { move(1); });
+      var del = el('button', { class: 'btn btn--small btn--danger', type: 'button' }, 'Delete group');
+      del.addEventListener('click', function () {
+        var next = cleanGroups(groups);
+        next.g = next.g.filter(function (x) { return x.id !== g.id; });
+        Object.keys(next.of).forEach(function (k) { if (next.of[k] === g.id) delete next.of[k]; });
+        save(next, 'Group deleted.' + (n === 1 ? ' Its quiz is now in Not in a group.' : n ? ' Its ' + n + ' quizzes are now in Not in a group.' : ''));
+      });
+      return el('div', { class: 'group__head group__head--edit' }, [nm, el('span', { class: 'group__count' }, UI.plural(n, 'quiz', 'quizzes')), up, down, del]);
+    }
+    paint = show(box, ['quizzes', 'groups'], function (qz, groups) {
       var live = qz.filter(function (q) { return !q.inBin; }), bin = qz.filter(function (q) { return q.inBin; });
       if (!live.length) box.appendChild(el('p', { class: 'muted' }, 'Your library is empty. Add a quiz from a Google Form you edit.'));
       else {
-        var list = el('div', { class: 'list' });
-        live.forEach(function (q) {
-          list.appendChild(el('div', { class: 'list__item' }, [
-            el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, q.title),
-              el('div', { class: 'list__sub' }, [UI.plural(q.questions, 'question') + ' · ' + UI.plural(q.points, 'mark') + ' · version ' + q.version +
-                (q.topics.length ? ' · ' + q.topics.join(', ') : '') + (q.mine ? '' : ' · shared by ' + q.owner.split('@')[0])])]),
-            el('a', { class: 'btn', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open'),
-            el('a', { class: 'btn btn--primary', href: '#run/' + q.quizId }, 'Run')]));
+        box.appendChild(organiseBar(groups));
+        if (!groups.g.length && !organising) {
+          var plain = el('div', { class: 'list' });
+          live.forEach(function (q) { plain.appendChild(quizRow(q, groups)); });
+          box.appendChild(plain);
+        } else grouped(live, groups).forEach(function (sec) {
+          var list = el('div', { class: 'list' });
+          sec.quizzes.forEach(function (q) { list.appendChild(quizRow(q, groups)); });
+          if (!sec.quizzes.length) list.appendChild(el('div', { class: 'list__item small muted' }, organising ? 'No quiz in this group yet: choose this group on a quiz below.' : 'No quiz in this group yet. Press Organise to move some here.'));
+          var wrap = el('section', { class: 'group' });
+          wrap.appendChild(groupHead(sec, groups, list, sec.group ? groups.g.indexOf(sec.group) : -1));
+          wrap.appendChild(list);
+          box.appendChild(wrap);
         });
-        box.appendChild(list);
       }
       if (bin.length) {
         box.appendChild(el('h3', {}, 'In the bin'));
@@ -592,6 +730,19 @@
         box.appendChild(bl);
       }
     });
+  }
+
+  /* the address pupils open, copied for a Google Classroom post (10 Nov 2026: pupils of other subjects may never open the
+     hub's front page); the browser's own copy, else a box with the link to copy by hand */
+  function copyLinkButton() {
+    var b = el('button', { class: 'btn', type: 'button' }, 'Copy the link for pupils');
+    b.addEventListener('click', function () {
+      var link = location.origin + location.pathname.replace(/index\.html$/, '');
+      function by() { window.prompt('Copy this link for your pupils:', link); }
+      function done() { UI.toast('Copied: ' + link.replace(/^https?:\/\//, '') + '. Paste it into Google Classroom. Pupils open it, sign in and see the quiz.'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, by); else by();
+    });
+    return b;
   }
 
   /* add a quiz from a Google Form, or import the same form again as a new version */
@@ -929,7 +1080,7 @@
       el('li', {}, [el('strong', {}, 'Import your class. '), 'My classes ▸ Import from Google Classroom. Google asks once for permission.']),
       el('li', {}, [el('strong', {}, 'Add your quiz. '), 'My quizzes ▸ Add a quiz from a Google Form. Paste the address of the form as you see it when you edit it. Check what came across, then add it.']),
       el('li', {}, [el('strong', {}, 'Run it. '), 'Run a quiz: choose the quiz, the class and the length, then Start now.']),
-      el('li', {}, [el('strong', {}, 'Pupils sit it. '), 'They open nlcsbiology.com/quiz-hall in Chrome on a laptop and sign in. If one leaves the page, the quiz locks: press Unlock on the live page.']),
+      el('li', {}, [el('strong', {}, 'Pupils sit it. '), 'Signed in on nlcsbiology.com, they see the quiz on its front page within a few seconds of Start now; or they open nlcsbiology.com/quiz-hall (Copy the link for pupils, for Google Classroom). Chrome on a laptop. If one leaves the page, the quiz locks: press Unlock on the live page.']),
       el('li', {}, [el('strong', {}, 'Mark and look. '), 'Answers the key cannot mark wait in To mark: one key press per mark. Results shows the class, each question, each topic and each pupil over time.'])]));
     app.appendChild(el('h2', {}, 'Good to know'));
     app.appendChild(el('ul', { class: 'panel stack small' }, [
@@ -940,6 +1091,7 @@
       el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it. Delete for good, beside Bring back, deletes the class and all its results; it cannot be undone.'),
       el('li', {}, 'Test mode, on Run a quiz and on the live page while the quiz runs, has the Test System\'s four switches: Track + warn (off: open book), Block actions (copy, paste and right-click), Auto-lock (off: record only) and Require full screen. Only you can change them for your own quiz.'),
       el('li', {}, 'A quiz you share can be run by your colleagues. Only you can change it, and nobody else sees your results.'),
+      el('li', {}, 'Groups: My quizzes ▸ Organise. Make groups such as Topic 1, then choose each quiz\'s group. Press a group\'s name to fold it away. Your groups are your own: a colleague\'s shared quiz goes in your group without changing theirs. Deleting a group keeps its quizzes.'),
       el('li', {}, 'Pupils need Google Chrome on a laptop or a Chromebook. Phones, iPads and other browsers are refused.')]));
   }
 })(window);

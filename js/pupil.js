@@ -108,7 +108,42 @@
       app.appendChild(el('h2', {}, 'Your results'));
       app.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, [el('th', {}, 'Quiz'), el('th', { class: 'num' }, 'Score'), el('th', {}, '')])), tb])));
     }
-    if (!open.length) P.homeTimer = setTimeout(refresh, 60000);
+    watchHome(open);
+  }
+  /* A quiz started after this page was drawn shows within seconds (Daniel, 10 Nov 2026: "it needs to be almost instant"):
+     pupil.now, a light check that writes nothing, every 10 seconds while this page is in front (every 30 after a quarter of
+     an hour), and at once when the pupil comes back to it. The page is drawn again, from pupil.home, only when what is open
+     has changed (a new quiz, or one whose start time has come). A back office before 10 Nov 2026: pupil.home every minute. */
+  var homeGen = 0;
+  function sigOf(list) { return (list || []).map(function (q) { return q.id + ':' + q.state; }).join('|'); }
+  function watchHome(open) {
+    var gen = ++homeGen, drawn = sigOf(open), since = Date.now(), asking = false, old = false;
+    function next() {
+      clearTimeout(P.homeTimer);
+      if (gen !== homeGen) return;
+      var gap = old ? 60000 : Date.now() - since > 15 * 60000 ? 30000 : 10000;
+      P.homeTimer = setTimeout(check, gap * (0.8 + Math.random() * 0.4));   /* ± 20 %, so a class does not ask at the same second */
+    }
+    function check() {
+      if (gen !== homeGen || asking) return;
+      if (document.hidden) return next();
+      asking = true;
+      var p = old ? API.call('pupil.home', {}, { quiet: true }).then(function (r) { return r.home; }) : API.call('pupil.now', {}, { quiet: true });
+      p.then(function (r) {
+        asking = false;
+        if (gen !== homeGen) return;
+        if (sigOf(r.open) === drawn) return next();
+        if (old) return home(r);
+        API.call('pupil.home', {}, { quiet: true }).then(function (h) { if (gen === homeGen) home(h.home); }, function () { next(); });
+      }, function (e) {
+        asking = false;
+        if (!old && /unknown action/.test(e && e.message || '')) old = true;
+        next();
+      });
+    }
+    P.homeVis = function () { if (!document.hidden && gen === homeGen) { since = Date.now(); check(); } };
+    document.addEventListener('visibilitychange', P.homeVis);
+    next();
   }
   /* a button that asks says so until the page comes, then the page changes in one step (Daniel, 10 Nov 2026) */
   function noop() {}
@@ -398,7 +433,11 @@
   }
   function stopWatch() { watchers.forEach(function (w) { w[0].removeEventListener(w[1], w[2], w[3]); }); watchers = []; clearInterval(P.offlineTimer); }
   P.stop = function () { stopAll(); S = null; leaveFull(); };
-  function stopAll() { stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); var f = $('fsOverlay'); if (f) f.remove(); }
+  function stopAll() {
+    stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); var f = $('fsOverlay'); if (f) f.remove();
+    homeGen++;                                                             /* the first page's checks stop with it */
+    if (P.homeVis) { document.removeEventListener('visibilitychange', P.homeVis); P.homeVis = null; }
+  }
 
   /* ── handing in ── */
   function confirmHandIn() {

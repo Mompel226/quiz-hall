@@ -11,13 +11,16 @@ Open it at <https://nlcsbiology.com/quiz-hall/>.
 2. **Add a quiz** by pasting the address of a Google Form you edit. Quiz Hall copies it once: questions, points, the
    answer key and the pictures.
 3. **Try it as a pupil** first, if you like: you see it exactly as pupils will, and nothing is saved.
-4. **Run it** for a class: choose the length and the test mode (as in the Test System: Track + warn, Block actions,
-   Auto-lock, Require full screen), and press Start now. Pupils open this website on a laptop in Chrome, sign in
-   with their school account, and see the quiz.
-5. **The quiz locks** if a pupil leaves the page (unless you turned Auto-lock or Track + warn off); you unlock them on the live page.
-6. **Marking**: choice questions and short answers are marked at once from the form's key. Paragraph answers, and short
+4. **Organise** My quizzes in your own groups (Topic 1, Topic 2 …): press a group's name to fold it away. A colleague's
+   shared quiz goes in your group without changing theirs, and deleting a group keeps its quizzes.
+5. **Run it** for a class: choose the length and the test mode (as in the Test System: Track + warn, Block actions,
+   Auto-lock, Require full screen), and press Start now. Pupils signed in on nlcsbiology.com see a Quiz card on its
+   front page within a few seconds, or they open this website (Copy the link for pupils, to paste into Google Classroom),
+   on a laptop in Chrome, with their school account.
+6. **The quiz locks** if a pupil leaves the page (unless you turned Auto-lock or Track + warn off); you unlock them on the live page.
+7. **Marking**: choice questions and short answers are marked at once from the form's key. Paragraph answers, and short
    answers close to the key, wait for you on one screen, one key press per mark.
-7. **Results**: your class quiz by quiz, each question, each topic, each pupil over time, and who to check on.
+8. **Results**: your class quiz by quiz, each question, each topic, each pupil over time, and who to check on.
 
 Only teachers on the Quiz Hall list can open the teacher pages, and each teacher sees only their own classes and
 results. Written answers are kept until 31 July, the end of the school year; then only the marks are kept.
