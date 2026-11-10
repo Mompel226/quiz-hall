@@ -95,7 +95,7 @@
         push(q0); return;
       }
       if (it.videoItem) { report.push({ n: '', title: title || 'A video', kind: 'Video', how: 'Not copied: a video cannot play in a locked quiz', warn: true }); return; }
-      if (it.questionGroupItem) { report.push({ n: '', title: title || 'A grid', kind: 'Grid', how: 'Not copied: grids are not in this version', warn: true }); return; }
+      if (it.questionGroupItem) { report.push({ n: '', title: title || 'A grid', kind: 'Grid', how: 'Not copied: Quiz Hall cannot run a grid question', warn: true }); return; }
       var qi = it.questionItem;
       if (!qi || !qi.question) return;
       var qq = qi.question, gr = qq.grading || {}, q = { id: (qq.questionId || ('q' + i)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24) || ('q' + i), title: title, help: desc, topic: topic, image: '' };
@@ -117,7 +117,7 @@
         q.kind = qq.textQuestion.paragraph ? 'paragraph' : 'short';
       } else {
         var what = qq.scaleQuestion ? 'Linear scale' : qq.ratingQuestion ? 'Rating' : qq.dateQuestion ? 'Date' : qq.timeQuestion ? 'Time' : qq.fileUploadQuestion ? 'File upload' : 'This kind of question';
-        report.push({ n: '', title: title, kind: what, how: 'Not copied: not in this version', warn: true });
+        report.push({ n: '', title: title, kind: what, how: 'Not copied: Quiz Hall cannot run this kind of question', warn: true });
         return;
       }
       n++;

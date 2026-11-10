@@ -22,6 +22,9 @@ Open it at <https://nlcsbiology.com/quiz-hall/>.
    answers close to the key, wait for you on one screen, one key press per mark.
 8. **Results**: your class quiz by quiz, each question, each topic, each pupil over time, and who to check on.
 
+**Help** (in the menu) shows every page you and your pupils will see, with pictures of a made-up class, so you can see it
+all before your first real quiz.
+
 Only teachers on the Quiz Hall list can open the teacher pages, and each teacher sees only their own classes and
 results. Written answers are kept until 31 July, the end of the school year; then only the marks are kept.
 

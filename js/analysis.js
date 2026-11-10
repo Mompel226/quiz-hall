@@ -33,9 +33,16 @@
   function model(r) {
     var pupils = r.pupils.slice(), byEmail = {};
     pupils.forEach(function (p) { byEmail[p.email] = p; });
-    var rowsBy = {};
+    var rowsBy = {}, quizOf = {};
+    r.sittings.forEach(function (s) { quizOf[s.id] = r.quizzes[s.quiz]; });
     r.rows.forEach(function (x) {
-      x.pct = x.max ? 100 * x.score / x.max : null;
+      /* a quiz still being marked counts only the marks given so far (10 Nov 2026, seen on the Help page's made-up class):
+         its written answers waiting in To mark would otherwise count as 0, the class line would dip and a pupil on full
+         marks would be listed in Who to check on */
+      var quiz = quizOf[x.sid], waiting = 0;
+      if (x.toMark && quiz) (x.marks || []).forEach(function (tok, qi) { if ((tok === '?' || tok === '~') && quiz.questions[qi]) waiting += quiz.questions[qi].points || 0; });
+      x.markedMax = Math.max(0, x.max - waiting);
+      x.pct = x.markedMax ? 100 * x.score / x.markedMax : null;
       (rowsBy[x.sid] = rowsBy[x.sid] || {})[x.email] = x;
       if (!byEmail[x.email]) { byEmail[x.email] = { email: x.email, name: x.email.split('@')[0], left: true }; pupils.push(byEmail[x.email]); }
     });
@@ -107,7 +114,7 @@
     var legend = el('div', { class: 'legend' }, ['Score:', el('i', { style: 'background:var(--heat-1)' }), el('span', {}, 'under 40 %'),
       el('i', { style: 'background:var(--heat-2)' }), el('span', {}, '40–54'), el('i', { style: 'background:var(--heat-3)' }), el('span', {}, '55–69'),
       el('i', { style: 'background:var(--heat-4)' }), el('span', {}, '70–84'), el('i', { style: 'background:var(--heat-5)' }), el('span', {}, '85 and over'),
-      el('i', { class: 'none' }), el('span', {}, '— not sat'), el('span', {}, '* still being marked')]);
+      el('i', { class: 'none' }), el('span', {}, '— not sat'), el('span', {}, '* still being marked: the marks so far')]);
     body.appendChild(legend);
     var thead = el('tr', {}, [el('th', { class: 'name' }, 'Pupil')]);
     m.sittings.forEach(function (s) {
@@ -119,7 +126,7 @@
       var tr = el('tr', {}, [el('td', { class: 'name' }, el('a', { href: '#results/' + o.classId + '/pupil/' + encodeURIComponent(p.email) }, p.name + (p.left ? ' (left)' : '')))]);
       m.sittings.forEach(function (s) {
         var x = s.rows[p.email], td = el('td', { class: heatClass(x ? x.pct : null) }, x ? round(x.pct) + (x.toMark ? '*' : '') : '—');
-        tip(td, p.name + ' · ' + s.title + ' · ' + (x ? x.score + ' of ' + x.max + ' (' + round(x.pct) + ' %)' + (x.toMark ? ', ' + x.toMark + ' still to mark' : '') +
+        tip(td, p.name + ' · ' + s.title + ' · ' + (x ? (x.toMark ? x.score + ' of the ' + x.markedMax + ' marked so far (' + round(x.pct) + ' %), ' + x.toMark + ' still to mark' : x.score + ' of ' + x.max + ' (' + round(x.pct) + ' %)') +
           (x.secs ? ' · ' + UI.mins(x.secs) : '') + (x.locks ? ' · locked ' + x.locks + '×' : '') : 'not sat'));
         tr.appendChild(td);
       });
@@ -177,7 +184,7 @@
       var rows = [['Pupil', 'Score', 'Out of', '%', 'Time (s)', 'Locks'].concat(quiz.questions.map(function (q, i) { return 'Q' + (i + 1) + ' answer'; }), quiz.questions.map(function (q, i) { return 'Q' + (i + 1) + ' mark'; }))];
       m.pupils.forEach(function (p) {
         var x = s.rows[p.email]; if (!x) return;
-        rows.push([p.name, x.score, x.max, round(x.pct), x.secs, x.locks].concat(quiz.questions.map(function (q, i) { return x.answers[i] === '¶' ? '(written)' : x.answers[i]; }), x.marks));
+        rows.push([p.name, x.score, x.toMark ? x.markedMax : x.max, round(x.pct), x.secs, x.locks].concat(quiz.questions.map(function (q, i) { return x.answers[i] === '¶' ? '(written)' : x.answers[i]; }), x.marks));
       });
       return rows;
     } };
@@ -235,7 +242,7 @@
       if (x && x.pct !== null && s.avg !== null) { mine.push({ i: i, y: x.pct, tip: p.name + ' · ' + s.title + ' · ' + round(x.pct) + ' %' }); }
       if (s.avg !== null) others.push({ i: i, y: s.avg, tip: 'Class average · ' + s.title + ' · ' + round(s.avg) + ' %' });
       var diff = x && s.avg !== null ? x.pct - s.avg : null;
-      tb.appendChild(el('tr', {}, [el('td', {}, UI.date(s.opens)), el('td', {}, s.title), el('td', { class: 'num' }, x ? x.score + ' / ' + x.max + (x.toMark ? '*' : '') : 'not sat'),
+      tb.appendChild(el('tr', {}, [el('td', {}, UI.date(s.opens)), el('td', {}, s.title), el('td', { class: 'num' }, x ? x.score + ' / ' + (x.toMark ? x.markedMax + '*' : x.max) : 'not sat'),
         el('td', { class: 'num' }, x ? round(x.pct) + ' %' : ''), el('td', { class: 'num' }, round(s.avg) + ' %'),
         el('td', { class: 'num' }, diff === null ? '' : (diff >= 0 ? '+' : '−') + Math.abs(Math.round(diff)))]));
     });
@@ -266,11 +273,12 @@
     });
     if (wrong.childNodes.length) { body.appendChild(el('h3', {}, 'Marks lost in the last three quizzes')); body.appendChild(wrong); }
     return { name: p.name + ' quizzes.csv', rows: function () {
-      return [['Date', 'Quiz', 'Score', 'Out of', '%', 'Class average %']].concat(m.sittings.map(function (s) { var x = s.rows[p.email]; return [UI.date(s.opens), s.title, x ? x.score : '', x ? x.max : '', x ? round(x.pct) : '', round(s.avg)]; }));
+      return [['Date', 'Quiz', 'Score', 'Out of', '%', 'Class average %']].concat(m.sittings.map(function (s) { var x = s.rows[p.email]; return [UI.date(s.opens), s.title, x ? x.score : '', x ? (x.toMark ? x.markedMax : x.max) : '', x ? round(x.pct) : '', round(s.avg)]; }));
     } };
   }
 
   /* ── Who to check on: neutral words, never a label ── */
+  function against(v) { var n = Math.round(Math.abs(v)); return n === 0 ? 'level with it' : n + (n === 1 ? ' point ' : ' points ') + (v > 0 ? 'above' : 'below'); }
   function checkView(body, m, extra, o) {
     var out = [];
     var closed = m.sittings.filter(function (s) { return s.state !== 'open'; });
@@ -279,7 +287,8 @@
       m.sittings.forEach(function (s) { var x = s.rows[p.email]; if (x && x.pct !== null && s.avg !== null) rel.push(x.pct - s.avg); });
       var why = [];
       var l3 = rel.slice(-3);
-      if (l3.length === 3 && l3[0] - l3[1] >= 3 && l3[1] - l3[2] >= 3 && l3[0] - l3[2] >= 10) why.push('Lower against the class in each of the last three quizzes');   /* each step at least 3 points, so a tiny wobble is no reason */
+      /* each step at least 3 points, so a tiny wobble is no reason; where they stand is said, so a pupil still above the class is not read as behind */
+      if (l3.length === 3 && l3[0] - l3[1] >= 3 && l3[1] - l3[2] >= 3 && l3[0] - l3[2] >= 10) why.push('Further down against the class in each of the last three quizzes: from ' + against(l3[0]) + ' to ' + against(l3[2]));
       if (l3.length >= 2) { var a = l3.reduce(function (s, v) { return s + v; }, 0) / l3.length; if (a <= -15) why.push('About ' + Math.round(-a) + ' points below the class average in recent quizzes'); }
       var missed = closed.slice(-2).filter(function (s) { return !s.rows[p.email]; }).length;
       if (missed === 2) why.push('Did not hand in the last two quizzes');

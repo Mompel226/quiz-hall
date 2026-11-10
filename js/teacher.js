@@ -368,16 +368,17 @@
           el('td', { class: 'num' }, p.deadline && p.status !== 'handed' ? UI.left(p.deadline - now) : ''),
           el('td', { class: 'num' }, p.status === 'handed' ? p.score + ' / ' + p.max + (p.toMark ? ' (' + p.toMark + ' to mark)' : '') : ''),
           el('td', { class: 'num' }, p.locks ? String(p.locks) : '')];
-        var actions = el('td', { class: 'row' });
+        var actions = el('td', { class: 'act' }), actRow = el('div', { class: 'row' });   /* a flex box INSIDE the cell: a flex cell leaves the table's rows */
+        actions.appendChild(actRow);
         if (p.status === 'locked') {
           var ub = el('button', { class: 'btn btn--small btn--primary', type: 'button' }, 'Unlock');
           ub.addEventListener('click', function () { act(ub, 'Unlocking…', API.call('sitting.unlock', { sittingId: sid, email: p.email }), p.name + ' is unlocked.'); });
-          actions.appendChild(ub);
+          actRow.appendChild(ub);
         }
         if (open && p.status !== 'handed') {
           var eb = el('button', { class: 'btn btn--small', type: 'button' }, '+5 min');
           eb.addEventListener('click', function () { act(eb, 'Adding…', API.call('sitting.extra', { sittingId: sid, email: p.email, minutes: 5 }), p.name + ' has 5 more minutes.'); });
-          actions.appendChild(eb);
+          actRow.appendChild(eb);
         }
         cells.push(actions);
         tb.appendChild(el('tr', {}, cells));
@@ -455,7 +456,7 @@
     var focus = 0, comments = {};
     item.answers.forEach(function (a) { if (a.comment) comments[a.comment] = 1; });
     var done = function () { return groups.filter(function (g) { return !g.pending; }).length; };
-    box.appendChild(el('p', { class: 'small' }, [el('a', { href: '#mark' }, '← To mark'), ' · ' + item.title + ' · ' + item.className]));
+    box.appendChild(el('p', { class: 'small' }, item.title + ' · ' + item.className));   /* the way back is the ← To mark above the heading */
     var qbox = el('section', { class: 'panel' }, [
       el('div', { class: 'head' }, [el('h1', {}, 'Question ' + item.number), el('span', { class: 'chip chip--accent' }, UI.plural(item.points, 'mark'))]),
       el('p', { class: 'q__t' }, item.text), item.help ? el('p', { class: 'q__h' }, item.help) : null,
@@ -1073,25 +1074,9 @@
   }
 
   /* ── Help, task first ──────────────────────────────────── */
+  /* Help: its own file, js/help.js, with the pictures of a made-up class (Daniel, 10 Nov 2026) */
   function help() {
     var app = page('Help', 'help');
-    app.appendChild(el('h1', {}, 'Run your first quiz'));
-    app.appendChild(el('ol', { class: 'panel stack' }, [
-      el('li', {}, [el('strong', {}, 'Import your class. '), 'My classes ▸ Import from Google Classroom. Google asks once for permission.']),
-      el('li', {}, [el('strong', {}, 'Add your quiz. '), 'My quizzes ▸ Add a quiz from a Google Form. Paste the address of the form as you see it when you edit it. Check what came across, then add it.']),
-      el('li', {}, [el('strong', {}, 'Run it. '), 'Run a quiz: choose the quiz, the class and the length, then Start now.']),
-      el('li', {}, [el('strong', {}, 'Pupils sit it. '), 'Signed in on nlcsbiology.com, they see the quiz on its front page within a few seconds of Start now; or they open nlcsbiology.com/quiz-hall (Copy the link for pupils, for Google Classroom). Chrome on a laptop. If one leaves the page, the quiz locks: press Unlock on the live page.']),
-      el('li', {}, [el('strong', {}, 'Mark and look. '), 'Answers the key cannot mark wait in To mark: one key press per mark. Results shows the class, each question, each topic and each pupil over time.'])]));
-    app.appendChild(el('h2', {}, 'Good to know'));
-    app.appendChild(el('ul', { class: 'panel stack small' }, [
-      el('li', {}, 'Pupils see their total score when they hand in. They see the right answers and your comments only when you press Release the answers, after the quiz is closed.'),
-      el('li', {}, 'Written (paragraph) answers are kept until 31 July, the end of the school year. On 1 August the words are deleted; the marks stay. Download any you want to keep before then.'),
-      el('li', {}, 'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.'),
-      el('li', {}, 'To see a quiz as your pupils will: My quizzes ▸ the quiz ▸ Try it as a pupil. Answer, try the lock, hand in, and see the score and the answers page. Nothing is saved.'),
-      el('li', {}, 'A class you no longer teach: My classes ▸ Remove. Nothing is deleted: its results are kept, and Bring back (at the bottom of My classes) undoes it. Delete for good, beside Bring back, deletes the class and all its results; it cannot be undone.'),
-      el('li', {}, 'Test mode, on Run a quiz and on the live page while the quiz runs, has the Test System\'s four switches: Track + warn (off: open book), Block actions (copy, paste and right-click), Auto-lock (off: record only) and Require full screen. Only you can change them for your own quiz.'),
-      el('li', {}, 'A quiz you share can be run by your colleagues. Only you can change it, and nobody else sees your results.'),
-      el('li', {}, 'Groups: My quizzes ▸ Organise. Make groups such as Topic 1, then choose each quiz\'s group. Press a group\'s name to fold it away. Your groups are your own: a colleague\'s shared quiz goes in your group without changing theirs. Deleting a group keeps its quizzes.'),
-      el('li', {}, 'Pupils need Google Chrome on a laptop or a Chromebook. Phones, iPads and other browsers are refused.')]));
+    global.Help.draw(app);
   }
 })(window);

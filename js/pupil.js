@@ -114,9 +114,17 @@
      pupil.now, a light check that writes nothing, every 10 seconds while this page is in front (every 30 after a quarter of
      an hour), and at once when the pupil comes back to it. The page is drawn again, from pupil.home, only when what is open
      has changed (a new quiz, or one whose start time has come). A back office before 10 Nov 2026: pupil.home every minute. */
-  var homeGen = 0;
+  var homeGen = 0, homeOpen = [];
+  /* the first page's checks stop the moment the pupil leaves it (Begin, Continue, See your answers): left running, a
+     check that saw the quiz change from ready to writing drew the first page over the quiz (found 10 Nov 2026, the day
+     v1.5 went live; check_quizhall_pages.mjs H7) */
+  function stopHome() {
+    homeGen++; clearTimeout(P.homeTimer);
+    if (P.homeVis) { document.removeEventListener('visibilitychange', P.homeVis); P.homeVis = null; }
+  }
   function sigOf(list) { return (list || []).map(function (q) { return q.id + ':' + q.state; }).join('|'); }
   function watchHome(open) {
+    homeOpen = open || [];
     var gen = ++homeGen, drawn = sigOf(open), since = Date.now(), asking = false, old = false;
     function next() {
       clearTimeout(P.homeTimer);
@@ -201,6 +209,7 @@
     }
     start();
     function start() {
+    stopHome();
     UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id })).then(function (r) {
       if (r.handed) return handedIn(r, q.title);
       var local = loadLocal(q.id);
@@ -213,7 +222,7 @@
       checkFull();
       if (S.locked) showLock();
       sendSoon(2000);
-    }, function () {});
+    }, function () { if (!S) watchHome(homeOpen); });                      /* Begin failed: still on the first page */
     }
   }
   /* a new mode from the back office: the watchers, the Open book mark and the full-screen wait follow it */
@@ -435,8 +444,7 @@
   P.stop = function () { stopAll(); S = null; leaveFull(); };
   function stopAll() {
     stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); var f = $('fsOverlay'); if (f) f.remove();
-    homeGen++;                                                             /* the first page's checks stop with it */
-    if (P.homeVis) { document.removeEventListener('visibilitychange', P.homeVis); P.homeVis = null; }
+    stopHome();                                                            /* the first page's checks stop with it */
   }
 
   /* ── handing in ── */
@@ -509,6 +517,7 @@
   /* ── after release: the right answers and the teacher's comments ── */
   function feedback(sid, btn) {
     UI.act(btn, 'Opening…', API.call('sit.feedback', { sittingId: sid })).then(function (r) {
+      stopHome();
       var app = UI.clear($('app'));
       app.appendChild(el('p', {}, el('button', { class: 'link', type: 'button', onclick: refresh }, '← Your quizzes')));
       if (!r.released) { app.appendChild(el('p', {}, 'Your teacher has not released the answers yet.')); return; }
