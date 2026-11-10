@@ -73,6 +73,14 @@
     show(0);
     return wrap;
   }
+  /* a kind of section (Daniel, 10 Nov 2026: "easier to see the different kind of sections"): its own colour, a tinted
+     band, its name and what it covers; the cards go inside it */
+  function section(app, kind, id, title, sub) {
+    var sec = el('section', { class: 'hsec hsec--' + kind, id: id, 'aria-labelledby': id + '-t' });
+    sec.appendChild(el('div', { class: 'hsec__head' }, [el('h2', { id: id + '-t' }, title), el('p', {}, sub)]));
+    app.appendChild(sec);
+    return sec;
+  }
   function openCard(id) {
     var d = document.getElementById(id);
     if (!d) return;
@@ -83,7 +91,16 @@
 
   H.draw = function (app) {
     app.appendChild(el('div', { class: 'head' }, el('h1', {}, 'Help')));
+    var toc = el('nav', { class: 'htoc', 'aria-label': 'On this page' });
+    [['start', 'h-s-start', 'Your first quiz'], ['pupils', 'h-s-pupils', 'What pupils see'], ['before', 'h-s-before', 'Before'],
+     ['during', 'h-s-during', 'During'], ['after', 'h-s-after', 'After'], ['classes', 'h-s-classes', 'Your classes'],
+     ['trouble', 'h-s-trouble', 'Problems'], ['know', 'h-s-know', 'Good to know']].forEach(function (t) {
+      var a = el('button', { class: 'htoc__a htoc__a--' + t[0], type: 'button' }, t[2]);
+      a.addEventListener('click', function () { var x = document.getElementById(t[1]); if (x) x.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+      toc.appendChild(a);
+    });
     app.appendChild(p('What you and your pupils will see, page by page. The pictures show a made-up teacher, Ms Rivera, with two made-up classes, so you can see every page before your first real quiz. Press a picture to see it full size.', 'hlede'));
+    app.appendChild(toc);
 
     /* ── the first quiz ── */
     var steps = [
@@ -101,10 +118,11 @@
       more.addEventListener('click', function () { openCard(s[2]); });
       ol.appendChild(el('li', {}, [el('div', {}, [el('span', { class: 'hsteps__t' }, s[0]), el('span', { class: 'hsteps__d' }, rich(s[1]))]), more]));
     });
-    app.appendChild(el('section', { class: 'panel hstart' }, [el('h2', {}, 'Your first quiz in seven steps'), ol]));
+    app.appendChild(el('section', { class: 'panel hstart', id: 'h-s-start' }, [el('h2', {}, 'Your first quiz in seven steps'), ol]));
+    var box = null;
 
     /* ── what pupils see ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'What your pupils see'));
+    box = section(app, 'pupils', 'h-s-pupils', 'What your pupils see', 'From the card on nlcsbiology.com to their answers, in six steps.');
     var flow = [
       ['p-hub-card', 'On nlcsbiology.com', 'Signed in on nlcsbiology.com with their school account, a pupil sees this card within about ten seconds of **Start now**, with no reload. **Open Quiz Hall** takes them to step 2. A pupil who opens your Google Classroom link, or a bookmark of nlcsbiology.com/quiz-hall, goes straight to step 2.', 'The front page of nlcsbiology.com with the Quiz open now card'],
       ['p-home', 'Their quizzes', 'Your quiz with your name, the class, the number of questions and the time. The blue box says what to do before **Begin** (switch off Grammarly and any AI extension; on a Mac, one setting in Chrome) and what makes the quiz lock. It follows your test mode: in open book it says that nothing is watched.', 'A pupil\'s first page in Quiz Hall: the quiz, the blue box and Begin'],
@@ -117,11 +135,11 @@
     flow.forEach(function (f) {
       fl.appendChild(el('li', { class: 'pflow__step' }, [el('div', { class: 'pflow__words' }, [el('h3', {}, f[1]), p(f[2])]), pic(f[0], f[3])]));
     });
-    app.appendChild(fl);
+    box.appendChild(fl);
 
     /* ── before the quiz ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'Before the quiz'));
-    app.appendChild(card('h-classes', 'Import a class from Google Classroom', 'My classes', [
+    box = section(app, 'before', 'h-s-before', 'Before the quiz', 'Once for each class and each quiz.');
+    box.appendChild(card('h-classes', 'Import a class from Google Classroom', 'My classes', [
       p('**My classes** ▸ **Import from Google Classroom** lists your classes in Google Classroom. Choose one and it comes with its pupils. Google asks you once to let Quiz Hall read your classes.'),
       p('Press a class to open its page:'),
       list(['(1) **Extra time** for a pupil: None, +10 %, +25 % or +50 %. Quiz Hall adds it to every quiz they sit, and the live page shows it beside their name.',
@@ -130,7 +148,7 @@
       lock('Only you see and change your classes, and only your classes appear when you run a quiz.')
     ], pic('t-class', 'A class page: the pupils, their extra time, Check against Classroom and Add a pupil by hand')));
 
-    app.appendChild(card('h-add', 'Add a quiz from a Google Form', 'My quizzes', [
+    box.appendChild(card('h-add', 'Add a quiz from a Google Form', 'My quizzes', [
       list(['Open your form in Google Forms, as when you edit it, and copy the address at the top of the browser.',
             '**My quizzes** ▸ **Add a quiz from a Google Form**: paste it and press **Read the form**.',
             'Check what came across, then **Add to my library**.'], true),
@@ -143,7 +161,7 @@
       lock('Quiz Hall can read only a form you can edit. The pupils\' link (…/forms/d/e/…) does not work: copy the address of the editing page.')
     ], pic('t-add', 'Add a quiz from a Google Form: the form\'s address, then each question with how it is marked and its topic')));
 
-    app.appendChild(card('h-quiz', 'Your quiz: try it, share it, change it', 'My quizzes ▸ a quiz', [
+    box.appendChild(card('h-quiz', 'Your quiz: try it, share it, change it', 'My quizzes ▸ a quiz', [
       list(['(1) **Run this quiz** opens Run a quiz with this quiz chosen.',
             '(2) **Try it as a pupil**: answer, try the lock, hand in, and see the score and the answers page, as a pupil will. Nothing is saved.',
             '(3) The versions: each change keeps the old version. Pupils always keep the version they sat.',
@@ -153,7 +171,7 @@
       p('Below the buttons, every question with its key, its points, its topic and how it is marked.')
     ], pic('t-quiz', 'A quiz\'s page: Run this quiz, Try it as a pupil, the versions, Change the key or points, Share, Move to the bin')));
 
-    app.appendChild(card('h-groups', 'Put your quizzes into groups', 'My quizzes ▸ Organise', [
+    box.appendChild(card('h-groups', 'Put your quizzes into groups', 'My quizzes ▸ Organise', [
       p('Press **Organise** (the first time: **Organise into groups**):'),
       list(['(1) Type a name, for example "Topic 1 · Motion", and press **Add the group**.',
             '(2) Change a group\'s name here.',
@@ -165,15 +183,15 @@
     ], pic('t-organise', 'My quizzes while organising: a new group, each group\'s name, up and down, Delete group, and each quiz\'s Group')));
 
     /* ── during the quiz ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'During the quiz'));
-    app.appendChild(card('h-today', 'Today, your first page', 'Today', [
+    box = section(app, 'during', 'h-s-during', 'During the quiz', 'Starting a quiz and watching it live.');
+    box.appendChild(card('h-today', 'Today, your first page', 'Today', [
       p('Each time you open Quiz Hall:'),
       list(['(1) **Running now**: each quiz that is open, how many have handed in and are writing, and until when pupils can begin. **Open live page**.',
             '(2) **Waiting to be marked**: each quiz with answers for you. **Mark now**.',
             '(3) The number beside **To mark** in the menu is how many answers wait, in all your quizzes.']),
       p('Below them, **Recent quizzes**: press **See it** for a quiz\'s results.')
     ], pic('t-today', 'Today: Running now, Waiting to be marked, and the number of answers to mark in the menu')));
-    app.appendChild(card('h-run', 'Run a quiz and choose the test mode', 'Run a quiz', [
+    box.appendChild(card('h-run', 'Run a quiz and choose the test mode', 'Run a quiz', [
       list(['(1) The quiz, (2) the class, (3) the length in minutes.',
             '(4) **Start**: **Now**, or **At a time I choose**: until then pupils see it as "soon", with no way in.',
             '(5) **Test mode**: the Test System\'s four switches. **Track + warn** watches leaving the page, Shift + Command and going offline, and warns the pupil; off, it is open book. **Block actions** stops copy, paste and right-click. **Auto-lock** locks a pupil who leaves the page until you unlock them; off, leaving is only recorded for you. **Require full screen** opens the quiz in full screen and waits while a pupil is out of it.',
@@ -185,7 +203,7 @@
       p('This computer remembers your last test mode for the next quiz.', 'small')
     ], pic('t-run', 'Run a quiz: the quiz, the class, the length, the start, the four test mode switches, Start now and Copy the link for pupils')));
 
-    app.appendChild(card('h-live', 'The live page', 'Opens after Start now · later: Today ▸ Running now ▸ Open live page', [
+    box.appendChild(card('h-live', 'The live page', 'Opens after Start now · later: Today ▸ Running now ▸ Open live page', [
       p('It checks every few seconds. Each row is a pupil: **Writing**, **Locked** (with the reason, for example "left the page"), **Not begun** or **Handed in**, with their time left, score and number of locks.'),
       list(['(1) **Test mode** can change while the quiz runs. Pupils\' pages take the change at their next save, within two minutes.',
             '(2) How many have handed in, are writing, are locked and have not begun.',
@@ -196,8 +214,8 @@
     ], pic('t-live', 'The live page: the test mode, the counts, and each pupil with Unlock and +5 min')));
 
     /* ── after the quiz ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'After the quiz'));
-    app.appendChild(card('h-mark', 'Mark the written answers', 'To mark (the number beside it is how many wait)', [
+    box = section(app, 'after', 'h-s-after', 'After the quiz', 'Marking, releasing the answers, and the results.');
+    box.appendChild(card('h-mark', 'Mark the written answers', 'To mark (the number beside it is how many wait)', [
       p('**To mark** lists each question with answers waiting: paragraphs, and short answers close to the key. Press **Mark**.'),
       list(['The model answer from your form is at the top.',
             'The same answer written by several pupils is marked once: "11 pupils wrote this".',
@@ -205,12 +223,12 @@
       p('Each mark is saved as you give it. The pupils\' scores and Results follow.')
     ], pic('t-mark', 'Marking one question: the model answer, then each different answer with the pupils who wrote it, the marks and a comment')));
 
-    app.appendChild(card('h-release', 'Release the answers', 'The live page, once the quiz is closed', [
+    box.appendChild(card('h-release', 'Release the answers', 'The live page, once the quiz is closed', [
       p('**Release the answers** lets each pupil see every question, their answer, the right answer and your comments (step 6 of what pupils see). **Hide the answers again** undoes it.'),
       lock('Only after the quiz is closed, so that pupils still writing never see the answers.')
     ]));
 
-    app.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
+    box.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
       views([
         { label: 'Class', pic: 't-results-class', alt: 'Results, Class: each pupil\'s percentage in each quiz, and the class average over time',
           words: 'Each pupil\'s score in each quiz as a percentage: the darker, the higher. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time.' },
@@ -227,26 +245,26 @@
     ]));
 
     /* ── classes ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'Your classes'));
-    app.appendChild(card('h-remove', 'Remove a class, bring it back, or delete it for good', 'My classes', [
+    box = section(app, 'classes', 'h-s-classes', 'Your classes', 'When a class ends.');
+    box.appendChild(card('h-remove', 'Remove a class, bring it back, or delete it for good', 'My classes', [
       list(['**Remove** (or **Remove this class** on its page) takes a class you no longer teach off your lists. Nothing is deleted: its results stay, and a quiz already running for it goes on.',
             '**Bring back**, under **Removed classes** at the bottom of My classes, undoes it.',
             '**Delete for good**, beside Bring back, deletes the class with all its results. It cannot be undone.'])
     ]));
 
     /* ── problems ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'When something goes wrong'));
+    box = section(app, 'trouble', 'h-s-trouble', 'When something goes wrong', 'The usual reasons, and what to do.');
     [['A pupil says no quiz is showing', ['Check, in this order: they are signed in with their school account, not a personal Gmail; they are on the class list (My classes ▸ the class); the quiz has started (Today ▸ Running now); the time to begin has not passed (the live page says until when).', 'Their page checks every ten seconds or so; a reload checks at once.']],
      ['A pupil is locked again and again', ['Usually Grammarly or another extension, or a Mac showing its toolbar in full screen: the two steps in the blue box before Begin.', 'For that quiz, turn **Auto-lock** off on the live page. Leaving the page is still recorded for you.']],
      ['A pupil\'s internet dropped', ['Their answers are kept on their computer and sent when the connection comes back. After 15 seconds offline the quiz locks (with Auto-lock on): unlock them when they are back online.']],
      ['A pupil is on a phone, an iPad or Safari', ['Quiz Hall does not open a quiz there: pupils need Google Chrome on a laptop or a Chromebook.']],
      ['The form will not come in', ['Copy the address of the form\'s editing page (…/forms/d/…/edit), not the pupils\' link (…/forms/d/e/…). You must be able to edit the form.']],
      ['A colleague\'s quiz is not in My quizzes', ['Ask them to open the quiz ▸ **Share** and type your address or your department.']]
-    ].forEach(function (q, i) { app.appendChild(card('h-p' + i, q[0], '', q[1].map(function (s) { return p(s); }))); });
+    ].forEach(function (q, i) { box.appendChild(card('h-p' + i, q[0], '', q[1].map(function (s) { return p(s); }))); });
 
     /* ── rarely needed ── */
-    app.appendChild(el('h2', { class: 'hgroup' }, 'Good to know'));
-    app.appendChild(card('h-kept', 'What is kept, who sees it, and for how long', '', [
+    box = section(app, 'know', 'h-s-know', 'Good to know', 'Rarely needed.');
+    box.appendChild(card('h-kept', 'What is kept, who sees it, and for how long', '', [
       list(['Marks are kept. Written answers are kept until 31 July, the end of the school year; on 1 August the words are deleted and the marks stay. Download any you want to keep before then (**Results** ▸ **Download**).',
             'You see only your own classes and results. A pupil sees only their own. A colleague who runs your shared quiz sees only their own results.',
             'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.',
