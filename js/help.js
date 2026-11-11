@@ -9,7 +9,7 @@
   'use strict';
   var H = global.Help = {};
   var el = UI.el;
-  var V = '4';                      /* raise when the pictures in assets/help/ are taken again */
+  var V = '5';                      /* raise when the pictures in assets/help/ are taken again */
 
   /* "Press **Start now** (6)." → text, bold names, and (n) drawn like the pin it points to */
   function rich(s) {
@@ -104,8 +104,8 @@
 
     /* ── the first quiz ── */
     var steps = [
-      ['Import your class', '**My classes** ▸ **Import from Google Classroom**. Google asks once for permission.', 'h-classes'],
-      ['Add your quiz', '**My quizzes** ▸ **Add a quiz from a Google Form**: paste the address of the form as you see it when you edit it.', 'h-add'],
+      ['Import your class', '**My classes** ▸ **Import from Google Classroom** ▸ **Import** on your class, or **Import all**. Google asks once for permission.', 'h-classes'],
+      ['Add your quiz', '**My quizzes** ▸ **Add a quiz from a Google Form**: paste the address of the form as you see it when you edit it (several forms: one address on each line).', 'h-add'],
       ['Try it as a pupil', 'Open the quiz ▸ **Try it as a pupil**. You sit it exactly as a pupil will. Nothing is saved.', 'h-quiz'],
       ['Run it', '**Run a quiz**: the quiz, the class, the length and the test mode, then **Start now**.', 'h-run'],
       ['Watch it live', 'The live page opens by itself: who is writing, who is locked, who has handed in.', 'h-live'],
@@ -139,48 +139,77 @@
 
     /* ── before the quiz ── */
     box = section(app, 'before', 'h-s-before', 'Before the quiz', 'Once for each class and each quiz.');
-    box.appendChild(card('h-classes', 'Import a class from Google Classroom', 'My classes', [
-      p('**My classes** ▸ **Import from Google Classroom** lists your classes in Google Classroom. Press **Import** on a class and it comes with its pupils, or **Import all** for every class not in Quiz Hall yet. They are imported one after another, and each line says when its class is in. Google asks you once to let Quiz Hall read your classes.'),
-      p('A class already in My classes is never added twice: importing it again only brings its list up to date.', 'small'),
-      p('Press a class to open its page:'),
+    box.appendChild(card('h-classes', 'Import your classes from Google Classroom', 'My classes ▸ Import from Google Classroom', [
+      p('**My classes** ▸ **Import from Google Classroom** lists your classes in Google Classroom. Google asks you once to let Quiz Hall read them.'),
+      list(['(1) **Import all** imports every class not in Quiz Hall yet.',
+            '(2) **Import** imports one class with its pupils.',
+            '(3) Each line says when its class is in: "✓ 2 pupils imported". Several classes are imported one after another, and you stay on this list.',
+            '(4) **Check again**: a class already in My classes. It brings its list up to date and is never added twice.'])
+    ], pic('t-import', 'Your classes in Google Classroom: Import all, Import, a class imported, and Check again')));
+
+    box.appendChild(card('h-class', 'A class\'s page: extra time and its list', 'My classes ▸ a class', [
+      p('Press a class in **My classes** to open its page:'),
       list(['(1) **Extra time** for a pupil: None, +10 %, +25 % or +50 %. Quiz Hall adds it to every quiz they sit, and the live page shows it beside their name.',
             '(2) **Check against Classroom** makes the list match Google Classroom again: new pupils in, leavers out.',
             '**Add a pupil by hand**, under the list, for a pupil not yet in Google Classroom. This changes Quiz Hall\'s list only.']),
       lock('Only you see and change your classes, and only your classes appear when you run a quiz.')
     ], pic('t-class', 'A class page: the pupils, their extra time, Check against Classroom and Add a pupil by hand')));
 
-    box.appendChild(card('h-add', 'Add a quiz from a Google Form', 'My quizzes', [
+    box.appendChild(card('h-add', 'Add a quiz from a Google Form', 'My quizzes ▸ Add a quiz from a Google Form', [
       list(['Open your form in Google Forms, as when you edit it, and copy the address at the top of the browser.',
-            '**My quizzes** ▸ **Add a quiz from a Google Form**: paste it and press **Read the form**.',
-            'Check what came across, then **Add to my library**.'], true),
+            '(1) Paste it here and press **Read the form**.',
+            'Check what came across, then **Add to my library**.']),
       p('Quiz Hall copies the form once: the questions, the points, the answer key and the pictures. The table shows how each question will be marked:'),
       list(['**One answer** and **Tick boxes**: at once, from the form\'s answer key.',
             '**Short answer**: at once; an answer close to the key (a near miss) comes to you to decide.',
             '**Paragraph**: you mark it after the quiz.']),
-      p('**Left out:** lists anything Quiz Hall cannot run, such as a grid, a linear scale or an "Other" box. The form\'s sections become topics; change a topic here if you wish, because topics group the results.'),
-      p('**Topic for every question**, above the questions, gives every question one topic at once. Each question keeps its own Topic box, for a subtopic. The same box is on **Change the key or points**.'),
-      example(['You changed the form after adding it: open the quiz ▸ **Import the form again**. It becomes version 2; pupils who sat version 1 keep it.',
-               'Several forms at once: paste one address on each line and press the button under them. Each form gets a line with what came across, what was left out and a box for its topic. Tick the ones you want and press **Add the ticked forms**. A form already in My quizzes starts unticked: ticked, it becomes a new version of your quiz.']),
+      p('**Left out:** lists anything Quiz Hall cannot run, such as a grid, a linear scale or an "Other" box.'),
+      p('Topics group the results. The form\'s sections become topics. (2) **Topic for every question** gives every question one topic at once: type it and press **Give every question this topic**. (3) Each question keeps its own Topic box, for a subtopic. The same box is on **Change the key or points**.'),
+      example(['You changed the form after adding it: open the quiz ▸ **Import the form again**. It becomes version 2; pupils who sat version 1 keep it.']),
       lock('Quiz Hall can read only a form you can edit. The pupils\' link (…/forms/d/e/…) does not work: copy the address of the editing page.')
-    ], pic('t-add', 'Add a quiz from a Google Form: the form\'s address, then each question with how it is marked and its topic')));
+    ], pic('t-add', 'Add a quiz from a Google Form: the form\'s address, Topic for every question, then each question with how it is marked and its own topic')));
 
-    box.appendChild(card('h-quiz', 'Your quiz: try it, share it, change it', 'My quizzes ▸ a quiz', [
+    box.appendChild(card('h-add-many', 'Add several forms at once', 'My quizzes ▸ Add a quiz from a Google Form', [
+      list(['(1) Paste one address on each line, up to 30, and press the button under them ("Read the 3 forms").',
+            '(2) Each form gets a line: its name, its questions and marks, and what was left out.',
+            '(3) A topic for every question of that form, if you wish. Empty, the form\'s sections become its topics.',
+            '(4) A form Quiz Hall cannot read says why. The others still come in.',
+            '(5) Tick the forms you want and press **Add the ticked forms**. Each line then says "✓ Added", with Open.']),
+      p('A form already in My quizzes starts unticked. Ticked, it becomes a new version of your quiz, never a second copy.', 'small')
+    ], pic('t-add-many', 'Several forms at once: three addresses, a line per form with its topic box, one form not read, and Add the ticked forms')));
+
+    box.appendChild(card('h-quizzes', 'My quizzes: open, run, share, and the bin', 'My quizzes', [
+      list(['(1) **Open**: the quiz\'s own page.',
+            '(2) **Run**: Run a quiz, with this quiz chosen.',
+            '(3) **Share**: with colleagues in Quiz Hall, or as a new Google Form (see Share a quiz, below).',
+            '(4) **Move to the bin** hides your quiz without deleting it, so a wrong click costs nothing. A colleague\'s shared quiz has no bin button.',
+            '(5) **Take out of the bin**, under In the bin, brings it back as it was.',
+            '(6) **Remove for good** deletes it. It asks you first, and it cannot be undone.',
+            '(7) A quiz that a class sat, yours or a colleague\'s, is never removed for good: it stays in the bin, hidden, so those results still show. To delete it for good, first remove those results (the **×** on Results).'])
+    ], pic('t-quizzes', 'My quizzes: Open, Run, Share and Move to the bin on each quiz; In the bin, Take out of the bin, Remove for good, and a quiz kept hidden')));
+
+    box.appendChild(card('h-quiz', 'Your quiz: try it, change it', 'My quizzes ▸ a quiz', [
       list(['(1) **Run this quiz** opens Run a quiz with this quiz chosen.',
             '(2) **Try it as a pupil**: answer, try the lock, hand in, and see the score and the answers page, as a pupil will. Nothing is saved.',
             '(3) The versions: each change keeps the old version. Pupils always keep the version they sat.',
             '(4) **Change the key or points** fixes a wrong key or a mark; it saves a new version.',
-            '(5) **Share** opens two ways to share. **With colleagues in Quiz Hall**: type a colleague\'s school address, or a department (for example Physics), and press **Share with them**. They find it in their My quizzes, run it for their own classes and see only their own results; only you can change it; its ✕ stops it. **As a new Google Form**: **Make a Google Form** puts a copy in your own Google Drive, for a teacher who does not use Quiz Hall.',
+            '(5) **Share** opens the Share panel (see Share a quiz, below).',
             '(6) **Move to the bin**, here, hides the version you are looking at. In My quizzes it hides the whole quiz.']),
-      p('Below the buttons, every question with its key, its points, its topic and how it is marked.'),
-      p('In **My quizzes**, each quiz has **Open**, **Run**, **Share** and **Move to the bin**, so most jobs need no extra click.'),
-      example(['The Google Form copy is a quiz in Google Forms: the questions, the points, the answer key and the feedback. Google cannot fetch Quiz Hall\'s pictures, because they are shared with the school only, so the line under the button says how many to add by hand. The first time, Google asks you to let Quiz Hall make files in your Drive: it can reach only the files it makes.'])
+      p('Below the buttons, every question with its key, its points, its topic and how it is marked.')
     ], pic('t-quiz', 'A quiz\'s page: Run this quiz, Try it as a pupil, the versions, Change the key or points, Share, Move to the bin')));
 
-    box.appendChild(card('h-bin', 'The bin, and removing a quiz for good', 'My quizzes ▸ In the bin', [
-      list(['**Move to the bin** hides a quiz without deleting it, so a wrong click costs nothing. **Take out of the bin** brings it back as it was.',
-            '**Remove for good**, in the bin, deletes it. It asks you first, and it cannot be undone.',
-            'A version that a class sat, yours or a colleague\'s, is never removed for good: it stays in the bin, hidden, so those results still show. The bin says so. To delete it for good, first remove those results (the **×** on Results).'])
-    ]));
+    box.appendChild(card('h-share', 'Share a quiz: with colleagues, or as a Google Form', 'My quizzes ▸ Share', [
+      p('**With colleagues in Quiz Hall** (your own quizzes):'),
+      list(['(1) Each colleague or department it is shared with. Its ✕ stops it.',
+            '(2) Type a colleague\'s school address, or a department (for example Physics), and press (3) **Share with them**.']),
+      p('They find it in their My quizzes, run it for their own classes and see only their own results. Only you can change it.'),
+      p('**As a new Google Form**, for a teacher who does not use Quiz Hall:'),
+      list(['(4) **Make a Google Form** puts a copy in your own Google Drive: the questions, the points, the answer key and the feedback.',
+            '(5) Then "✓ Made in your Google Drive", with a link to open it in Google Forms. Share it there like any form.']),
+      example(['The first time, Google asks you to let Quiz Hall make files in your Drive: tick that box. Quiz Hall can reach only the files it makes.',
+               'Google cannot fetch Quiz Hall\'s pictures, because they are shared with the school only: the line under the button says how many to add by hand.',
+               'Changes to the Google Form never come back to Quiz Hall.'])
+    ], pic('t-share', 'Share: the colleagues and department it is shared with, the box to add one, Share with them, Make a Google Form, and the form made')));
 
     box.appendChild(card('h-groups', 'Put your quizzes into groups', 'My quizzes ▸ Organise', [
       p('Press **Organise** (the first time: **Organise into groups**):'),
@@ -243,7 +272,7 @@
     box.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
       views([
         { label: 'Class', pic: 't-results-class', alt: 'Results, Class: each pupil\'s percentage in each quiz, and the class average over time',
-          words: 'Each pupil\'s score in each quiz as a percentage, in colours from red (under 40 %) through orange, yellow and light green to dark green (85 % and over); the colours are shown above the table. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time. The **×** under a closed quiz removes that quiz\'s results for this class (see below).' },
+          words: 'Each pupil\'s score in each quiz as a percentage, in colours from red (under 40 %) through orange, yellow and light green to dark green (85 % and over); the colours are shown above the table. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time. The **×** under a closed quiz removes its results for this class (the next card).' },
         { label: 'Quiz', pic: 't-results-quiz', alt: 'Results, Quiz: each question with the share of marks the class earned and the most common wrong answer',
           words: 'One quiz: who handed in, the class average and the typical time, then each question from the lowest share of marks, its bar in the same colours, with the wrong answer most pupils chose. **Mark the rest** opens To mark; **Remove these results** removes this quiz\'s results for this class.' },
         { label: 'Topics', pic: 't-results-topics', alt: 'Results, Topics: the share of marks in each topic, weakest first',
@@ -254,9 +283,15 @@
           words: 'Pupils whose recent quizzes stand out: well below the class, further down against the class in three quizzes running, or two quizzes not handed in. A reason to look, never a verdict.' }
       ]),
       p('**Download** gives the view you are on as a spreadsheet file (CSV).', 'small'),
-      p('Removing one quiz\'s results (the **×**, or **Remove these results**) asks you first. It deletes only that quiz\'s scores, answers and comments for this class, and cannot be undone. Everything else stays: other classes, other quizzes, other teachers\' results and these pupils\' other results.'),
-      lock('Only the teacher who ran the quiz can remove its results, and only once it is closed.')
     ]));
+
+    box.appendChild(card('h-remove-results', 'Remove one quiz\'s results for a class', 'Results ▸ Class ▸ ×', [
+      p('(1) The **×** under a closed quiz on Results ▸ Class removes that quiz\'s results for this class. **Remove these results** does the same on the quiz\'s own view, and on its live page.'),
+      p('It asks you first, for example: "Remove the results of “Acceleration” (19 Oct) for 10A Physics? This deletes the scores, answers and comments of 18 pupils for this one quiz in this class. It cannot be undone."'),
+      p('Everything else stays: other classes, other quizzes, other teachers\' results and these pupils\' other results. The quiz stays in My quizzes.'),
+      example(['A quiz nobody handed in has no column on Results: open its live page (Today ▸ Recent quizzes) and press **Remove these results** there.']),
+      lock('Only the teacher who ran the quiz can remove its results, and only once it is closed.')
+    ], pic('t-remove', 'Results, Class: the × under a quiz, which removes that quiz\'s results for the class')));
 
     /* ── classes ── */
     box = section(app, 'classes', 'h-s-classes', 'Your classes', 'When a class ends.');

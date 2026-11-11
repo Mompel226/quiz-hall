@@ -233,7 +233,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 .topic-all { border: 1px solid var(--line-2); border-radius: var(--radius); padding: 12px 14px; margin: 0 0 14px; }
 .topic-all .small { margin: 8px 0 0; }
 textarea.links-in { min-height: 48px; }
-.many .many__name { font-weight: 600; }
+.many .many__name { font-weight: 600; display: inline-block; }
 .many details { margin-top: 4px; font-size: 14px; color: var(--ink-2); }
 .legend { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 22px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--bar-edge); }

@@ -854,7 +854,11 @@
       el('li', {}, quizId ? 'Copy the address at the top of the browser and paste it here.' : 'Copy the address at the top of the browser and paste it here. To add several forms at once, paste one address on each line.'),
       el('li', {}, 'The first time, Google asks you to let Quiz Hall see your forms and classes.')]));
     function links() { return link.value.split(/[\s,]+/).map(function (x) { return x.trim(); }).filter(String); }
-    if (!quizId) link.addEventListener('input', function () { var n = links().length; go.textContent = n > 1 ? 'Read the ' + n + ' forms' : 'Read the form'; });
+    /* the box grows with what is pasted, so every address shows */
+    if (!quizId) link.addEventListener('input', function () {
+      var n = links().length; go.textContent = n > 1 ? 'Read the ' + n + ' forms' : 'Read the form';
+      link.style.height = 'auto'; link.style.height = Math.min(260, Math.max(48, link.scrollHeight + 2)) + 'px';
+    });
     box.appendChild(el('div', { class: 'row' }, [el('div', { style: 'flex:1 1 360px' }, link), go]));
     var out = el('div');
     app.appendChild(out);
@@ -1248,7 +1252,7 @@
           list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name + (c.section ? ' · ' + c.section : '')), L.said]), L.b]));
         });
         function toDo() { var h = haveOf(); return lines.filter(function (L) { return !h[L.c.id] && L.state !== 'waiting' && L.state !== 'working'; }); }
-        function sayAll() { var n = toDo().length; all.hidden = !n; all.textContent = n === lines.length ? 'Import all ' + n : 'Import all ' + n + ' not in Quiz Hall yet'; }
+        function sayAll() { var n = toDo().length; all.hidden = !n; all.setAttribute('aria-label', 'Import all ' + n + (n === 1 ? ' class' : ' classes') + ' not in Quiz Hall yet'); }
         all.addEventListener('click', function () { toDo().forEach(enqueue); });
         function enqueue(L) {
           if (L.state === 'waiting' || L.state === 'working') return;
