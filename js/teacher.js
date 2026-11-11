@@ -21,6 +21,8 @@
      never changes, so its copy is never asked for again. */
   var kept = {}, keptAt = {}, ver = {}, asking = {}, session = 0, pageGen = 0, touched = false;
   function noop() {}
+  /* one id for each save the teacher means (1_Teacher.gs _quizSave_ `saveId`): the same save sent twice adds one quiz */
+  function saveId() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
   function fetchOf(key) {
     var m;
     if (key === 'home') return API.call('home', {}, { quiet: true }).then(function (r) { return r.home; });
@@ -210,7 +212,9 @@
   }
 
   /* ── Run a quiz ────────────────────────────────────────── */
-  function run(preQuiz) {
+  /* #run/<quiz> from a quiz's page, #run//<class> from a class's page: that quiz or class is chosen (Daniel, 11 Nov 2026:
+     a teacher pressed Run a quiz on a class's page and found another class chosen, the first in the list) */
+  function run(preQuiz, preClass) {
     var app = page('Run a quiz', 'run');
     app.appendChild(el('h1', {}, 'Run a quiz'));
     var box = el('section', { class: 'panel' }, el('p', { class: 'muted' }, 'Loading your quizzes and classes…'));
@@ -228,7 +232,7 @@
       /* in the teacher's own groups, as on My quizzes */
       var quizSel = el('select', { id: 'rq' }, !groups.g.length ? qz.map(quizOpt) : grouped(qz, groups).filter(function (sec) { return sec.quizzes.length; })
         .map(function (sec) { return el('optgroup', { label: sec.group ? sec.group.name : 'Not in a group' }, sec.quizzes.map(quizOpt)); }));
-      var clsSel = el('select', { id: 'rc' }, cl.map(function (c) { return el('option', { value: c.id }, c.name + ' (' + c.pupils + ')'); }));
+      var clsSel = el('select', { id: 'rc' }, cl.map(function (c) { return el('option', { value: c.id, selected: c.id === preClass ? true : null }, c.name + ' (' + c.pupils + ')'); }));
       var mins = el('input', { type: 'number', id: 'rm', min: 1, max: 240, value: 20 });
       var when = el('select', { id: 'rw' }, [el('option', { value: 'now' }, 'Now'), el('option', { value: 'later' }, 'At a time I choose')]);
       var at = el('input', { type: 'datetime-local', id: 'ra', hidden: true });
@@ -347,6 +351,15 @@
               s.released ? 'Pupils no longer see the answers.' : 'Pupils can now see the right answers and your comments.', true);
         });
         acts.appendChild(rel);
+      }
+      /* a closed run's results can be removed here too: also one that nobody sat, which Results does not show */
+      if (s.state !== 'open') {
+        var gone = el('button', { class: 'btn btn--danger', type: 'button' }, 'Remove these results');
+        gone.addEventListener('click', function () {
+          removeRun({ id: s.classId, name: s.className }, { id: sid, title: s.title, opens: s.opens,
+            list: r.pupils.filter(function (p) { return p.status === 'handed'; }) }, gone);
+        });
+        acts.appendChild(gone);
       }
       var toMark = r.pupils.reduce(function (a, p) { return a + (p.toMark || 0); }, 0);
       if (toMark) acts.appendChild(el('a', { class: 'btn btn--primary', href: '#mark/' + sid }, 'Mark ' + UI.plural(toMark, 'answer')));
@@ -563,11 +576,36 @@
       if (!cl.length) { UI.clear(box); box.appendChild(el('h1', {}, 'Results')); box.appendChild(el('p', {}, ['You have no class yet. ', el('a', { href: '#classes' }, 'Import one'), '.'])); return; }
       var id = classId && cl.some(function (c) { return c.id === classId; }) ? classId : cl[0].id;   /* an old link to a removed class opens the first */
       show(box, ['results:' + id], function (r) {
-        global.Analysis.draw(box, { classes: kept.classes ? kept.classes.classes : cl, classId: id, view: view || 'class', extra: extra, data: r });
+        global.Analysis.draw(box, { classes: kept.classes ? kept.classes.classes : cl, classId: id, view: view || 'class', extra: extra, data: r,
+                                    removeRun: function (s, btn) { removeRun(r.cls, s, btn); } });
       });
     }
     if (kept.classes) go(kept.classes);
     else have('classes').then(go, function (e) { if (gen === pageGen) { UI.clear(box); fail(box, e); } });
+  }
+
+  /* Remove one run's results (Daniel, 11 Nov 2026: "an easy X next to … the analysis … and then get a confirmation. Are you
+     sure you want to remove the data from this class?"): the × under a quiz on Results ▸ Class, or Remove these results on
+     its Quiz view, for a closed run only. It asks first, naming the quiz, the day, the class and how many pupils; the back
+     office deletes only the rows of that one run (1_Teacher.gs _sittingDelete_) and answers with the class's Results
+     without it, drawn with the toast. Sent once (noRetry): a second try of a removal that went through would only fail. */
+  function removeRun(cls, s, btn) {
+    var n = s.list.length;
+    if (!window.confirm('Remove the results of “' + s.title + '” (' + UI.date(s.opens) + ') for ' + cls.name + '?\n\n' +
+      'This deletes the scores, answers and comments of ' + UI.plural(n, 'pupil') + ' for this one quiz in this class. It cannot be undone.\n\n' +
+      'Nothing else changes: other classes, other quizzes, other teachers\' results and these pupils\' other results all stay. The quiz stays in My quizzes.')) return;
+    UI.act(btn, btn.textContent === '×' ? '…' : 'Removing…', API.call('sitting.delete', { sittingId: s.id }, { noRetry: true }).then(function (r) {
+      if (r && r.results && r.results.ok) { keep('results:' + cls.id, r.results); return r; }
+      forget('results:' + cls.id);
+      return ask('results:' + cls.id).then(function () { return r; });
+    }), 'Removed: the results of ' + s.title + ' for ' + cls.name + '.').then(function () {
+      refreshHome();
+      var to = '#results/' + cls.id + '/class';
+      if (location.hash === to) route(); else location.hash = to;
+    }, function () {                    /* refused or no answer: Results as the back office has them now */
+      forget('results:' + cls.id);
+      ask('results:' + cls.id).then(function () { if (/^#results\//.test(location.hash)) route(); }, noop);
+    });
   }
 
   /* ── My quizzes ────────────────────────────────────────── */
@@ -752,12 +790,17 @@
     app.appendChild(el('h1', {}, quizId ? 'Import the form again' : 'Add a quiz from a Google Form'));
     var box = el('section', { class: 'panel' });
     app.appendChild(box);
-    var link = el('input', { type: 'text', placeholder: 'https://docs.google.com/forms/d/…/edit', 'aria-label': 'The form\'s address' });
+    /* one address, or several on their own lines (Daniel, 11 Nov 2026: "paste that whole list and … import them all at the
+       same time"); importing a form again takes one */
+    var link = quizId ? el('input', { type: 'text', placeholder: 'https://docs.google.com/forms/d/…/edit', 'aria-label': 'The form\'s address' })
+      : el('textarea', { class: 'links-in', rows: 2, placeholder: 'https://docs.google.com/forms/d/…/edit', 'aria-label': 'The form\'s address, or several addresses, one on each line' });
     var go = el('button', { class: 'btn btn--primary', type: 'button' }, 'Read the form');
     box.appendChild(el('ol', { class: 'small' }, [
       el('li', {}, 'Open your form in Google Forms, as when you edit it.'),
-      el('li', {}, 'Copy the address at the top of the browser and paste it here.'),
+      el('li', {}, quizId ? 'Copy the address at the top of the browser and paste it here.' : 'Copy the address at the top of the browser and paste it here. To add several forms at once, paste one address on each line.'),
       el('li', {}, 'The first time, Google asks you to let Quiz Hall see your forms and classes.')]));
+    function links() { return link.value.split(/[\s,]+/).map(function (x) { return x.trim(); }).filter(String); }
+    if (!quizId) link.addEventListener('input', function () { var n = links().length; go.textContent = n > 1 ? 'Read the ' + n + ' forms' : 'Read the form'; });
     box.appendChild(el('div', { class: 'row' }, [el('div', { style: 'flex:1 1 360px' }, link), go]));
     var out = el('div');
     app.appendChild(out);
@@ -766,13 +809,111 @@
       existing = r; if (r.formId) link.value = 'https://docs.google.com/forms/d/' + r.formId + '/edit';
     }, function () {});
     go.addEventListener('click', function () {
-      var f = GoogleData.formId(link.value);
+      var all = links();
+      if (!quizId && all.length > 1) { UI.clear(out); readMany(all, out, go); return; }
+      var f = GoogleData.formId(all[0] || link.value);
       if (f.error) { UI.toast(f.error, true); return; }
       UI.clear(out);
       UI.act(go, 'Reading…', GoogleData.form(f.id).then(function (form) {
         var conv = GoogleData.toQuiz(form);
         return copyPictures(conv, out).then(function () { return conv; });
       })).then(function (conv) { checkScreen(out, conv, f.id, quizId); }, function () {});
+    });
+  }
+  /* Several forms at once (Daniel, 11 Nov 2026): each form is read in turn (Google is asked one form at a time, and its
+     pictures are copied), and one line per form says what came across, with its own "Topic for every question" box (empty
+     keeps the form's sections as topics). Add the ticked forms saves them one after another; each line then says Added, with
+     a link, or why not, and pressing it again tries only the ones not added. A form already in My quizzes starts unticked:
+     ticked, it is saved as a new version of your quiz (a colleague's quiz from that form: your own copy). A form that
+     cannot be read says why and stops none of the others. Each save is sent once (noRetry), so a slow answer never adds a
+     quiz twice. */
+  var MANY_MAX = 30;
+  function readMany(all, out, go) {
+    var seen = {}, items = [];
+    all.forEach(function (s) {
+      var f = GoogleData.formId(s);
+      if (f.id) { if (seen[f.id]) return; seen[f.id] = 1; }
+      items.push({ link: s, id: f.id || '', error: f.error || '' });
+    });
+    var over = Math.max(0, items.length - MANY_MAX);
+    items = items.slice(0, MANY_MAX);
+    var lib = {};                       /* forms already in My quizzes, by the form's id (a back office before 11 Nov 2026 gives none) */
+    var libReady = have('quizzes').then(function (qz) { (qz || []).forEach(function (q) { if (q.formId && !q.inBin) (lib[q.formId] = lib[q.formId] || []).push(q); }); }, noop);
+    var note = el('p', { class: 'small', role: 'status' }, 'Reading ' + UI.plural(items.length, 'form') + '…');
+    var addAll = el('button', { class: 'btn btn--primary', type: 'button', disabled: true }, 'Add the ticked forms');
+    var tb = el('tbody');
+    items.forEach(function (it, i) {
+      it.tick = el('input', { type: 'checkbox', disabled: true, 'aria-label': 'Add form ' + (i + 1) });
+      it.name = el('div', { class: 'many__name' }, it.link.length > 70 ? it.link.slice(0, 69) + '…' : it.link);
+      it.info = el('div', { class: 'small' });
+      it.topic = el('input', { type: 'text', class: 'topic-in', disabled: true, 'aria-label': 'Topic for every question of form ' + (i + 1) });
+      it.status = el('td', { class: 'small', role: 'status' }, 'Waiting…');
+      tb.appendChild(el('tr', {}, [el('td', {}, it.tick), el('td', { class: 'qtext' }, [it.name, it.info]), el('td', {}, it.topic), it.status]));
+    });
+    out.appendChild(el('section', { class: 'panel' }, [el('h2', {}, UI.plural(items.length, 'form')), note,
+      over ? el('div', { class: 'notice notice--warn' }, 'Quiz Hall reads ' + MANY_MAX + ' forms at a time: the last ' + UI.plural(over, 'address', 'addresses') + ' are left out. Add them afterwards.') : null,
+      el('div', { class: 'tblwrap' }, el('table', { class: 'tbl many' }, [el('thead', {}, el('tr', {}, ['Add', 'Form', 'Topic for every question (if empty: the form\'s sections)', 'Now'].map(function (h) { return el('th', {}, h); }))), tb])),
+      el('div', { class: 'row', style: 'margin-top:12px' }, [addAll, el('a', { class: 'btn', href: '#quizzes' }, 'Cancel')])]));
+    function bad(it, why) { it.status.textContent = why; it.status.className = 'small is-bad'; }
+    function ready(it) {
+      var quiz = it.conv.quiz, ans = quiz.questions.filter(function (q) { return ['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) >= 0; });
+      var pts = ans.reduce(function (a, q) { return a + (q.points || 0); }, 0), warns = it.conv.report.filter(function (r) { return r.warn || r.note; });
+      it.name.textContent = quiz.title;
+      it.info.insertBefore(document.createTextNode(UI.plural(ans.length, 'question') + ' · ' + UI.plural(pts, 'mark') + ' · ' +
+        ans.filter(function (q) { return /You mark/.test(howMarked(q)); }).length + ' for you to mark' +
+        (it.conv.isQuiz ? '' : ' · not a quiz in Google Forms, so no points or answer key')), it.info.firstChild);
+      if (warns.length) it.info.appendChild(el('details', {}, [el('summary', {}, 'Left out: ' + warns.length),
+        el('ul', {}, warns.map(function (w) { return el('li', {}, (w.title ? '“' + w.title.slice(0, 80) + '” — ' : '') + (w.warn ? w.how : w.note)); }))]));
+      if (!ans.length) return bad(it, 'Not added: it has no question pupils can answer.');
+      var same = lib[it.id] || [], mine = same.filter(function (q) { return q.mine; })[0];
+      it.ok = true; it.mine = mine || null; it.tick.disabled = false; it.topic.disabled = false;
+      it.tick.checked = !same.length;
+      it.status.className = 'small';
+      it.status.textContent = mine ? 'Already in My quizzes as “' + mine.title + '”. Tick it to save it as a new version of that quiz.'
+        : same.length ? 'A colleague\'s quiz from this form is in your library (shared by ' + same[0].owner + '). Tick it to add your own.' : 'Ready to add.';
+    }
+    var i = 0;
+    function next() {
+      if (i >= items.length) return Promise.resolve();
+      var it = items[i++];
+      note.textContent = 'Reading form ' + i + ' of ' + items.length + '…';
+      if (it.error) { bad(it, 'Not read: ' + it.error); return next(); }
+      it.status.textContent = 'Reading…';
+      return GoogleData.form(it.id).then(function (form) {
+        it.conv = GoogleData.toQuiz(form);
+        var pics = el('div');
+        it.info.appendChild(pics);
+        return copyPictures(it.conv, pics);
+      }).then(function () { ready(it); }).catch(function (e) { it.ok = false; bad(it, 'Not read: ' + (e && e.message ? e.message : String(e))); }).then(next);
+    }
+    UI.act(go, 'Reading…', libReady.then(next)).then(function () {
+      var n = items.filter(function (it) { return it.ok; }).length;
+      note.textContent = n ? UI.plural(n, 'form') + ' read. Tick the ones to add, then press Add the ticked forms.' : 'No form could be read. Each line says why.';
+      addAll.disabled = !n;
+    }, noop);
+    addAll.addEventListener('click', function () {
+      var list = items.filter(function (it) { return it.ok && it.tick.checked && !it.saved; });
+      if (!list.length) { UI.toast('Tick at least one form first.', true); return; }
+      var k = 0, added = 0, failed = 0;
+      function save() {
+        if (k >= list.length) return Promise.resolve();
+        var it = list[k++], quiz = JSON.parse(JSON.stringify(it.conv.quiz)), topic = it.topic.value.trim();
+        if (topic) quiz.questions.forEach(function (q) { if (['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) >= 0) q.topic = topic; });
+        it.status.className = 'small'; it.status.textContent = 'Adding…';
+        it.saveId = it.saveId || saveId();        /* kept until it is added: pressing again after a lost answer adds nothing twice */
+        return API.call('quiz.save', { quiz: quiz, formId: it.id, quizId: it.mine && it.tick.checked ? it.mine.quizId : undefined, saveId: it.saveId }, { noRetry: true }).then(function (r) {
+          it.saved = true; added++; it.tick.disabled = true; it.topic.disabled = true;
+          UI.clear(it.status); it.status.className = 'small is-good';
+          it.status.appendChild(document.createTextNode('✓ Added' + (it.mine ? ' as version ' + r.version : '') + ' · '));
+          it.status.appendChild(el('a', { href: '#quiz/' + r.quizId + '/' + r.version }, 'Open'));
+        }, function (e) { failed++; bad(it, 'Not added: ' + (e && e.message ? e.message : String(e))); }).catch(noop).then(save);
+      }
+      go.disabled = true;                 /* no second reading while forms are being added: it would not know them yet */
+      UI.act(addAll, 'Adding…', save()).then(function () {
+        go.disabled = false;
+        forget('quizzes'); ask('quizzes').catch(noop); refreshHome();
+        UI.toast(UI.plural(added, 'quiz', 'quizzes') + ' added to your library.' + (failed ? ' ' + failed + ' could not be added: its line says why. Press the button again to try it again.' : ''), failed > 0);
+      }, function () { go.disabled = false; });
     });
   }
   /* Google's link to a form picture works only for a short time: each one is copied into Drive now */
@@ -792,6 +933,24 @@
     }
     return nextPic();
   }
+  /* "Topic for every question" (Daniel, 11 Nov 2026: "an option to add just the topic and then all of the questions get that
+     topic"): one box above the questions; its button writes the topic into every question and every question's own Topic
+     box, which stays for a subtopic */
+  function topicForAll(qs, boxes) {
+    var inp = el('input', { type: 'text', class: 'topic-all__in', 'aria-label': 'Topic for every question' });
+    var b = el('button', { class: 'btn', type: 'button' }, 'Give every question this topic');
+    function give() {
+      var v = inp.value.trim();
+      if (!v) { UI.toast('Type a topic first.', true); inp.focus(); return; }
+      qs.forEach(function (q) { q.topic = v; });
+      boxes.forEach(function (x) { x.value = v; });
+      UI.toast('Every question now has the topic ' + v + '. Change one question\'s own Topic for a subtopic.');
+    }
+    b.addEventListener('click', give);
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); give(); } });
+    return el('div', { class: 'topic-all' }, [el('div', { class: 'fields' }, [el('label', { class: 'field' }, ['Topic for every question', inp]), b]),
+      el('p', { class: 'small' }, 'Each question keeps its own Topic box: change one there for a subtopic.')]);
+  }
   function howMarked(q) {
     if (q.kind === 'section' || q.kind === 'info' || q.kind === 'image') return '';
     if (!q.points) return 'Not marked (no points)';
@@ -810,22 +969,24 @@
     var warns = conv.report.filter(function (r) { return r.warn || r.note; });
     if (warns.length) panel.appendChild(el('div', { class: 'notice notice--warn' }, [el('strong', {}, 'Left out:'),
       el('ul', {}, warns.map(function (w) { return el('li', {}, (w.title ? '“' + w.title.slice(0, 80) + '” — ' : '') + (w.warn ? w.how : w.note)); }))]));
-    var tb = el('tbody'), n = 0;
+    var tb = el('tbody'), n = 0, boxes = [];
+    panel.appendChild(topicForAll(ans, boxes));
     quiz.questions.forEach(function (q) {
       if (q.kind === 'section') { tb.appendChild(el('tr', {}, el('td', { colspan: 6 }, el('strong', {}, 'Section: ' + (q.title || ''))))); return; }
       if (q.kind === 'info' || q.kind === 'image') return;
       n++;
       var topic = el('input', { type: 'text', class: 'topic-in', value: q.topic || '', 'aria-label': 'Topic of question ' + n });
+      boxes.push(topic);
       topic.addEventListener('input', function () { q.topic = topic.value.trim(); });
       tb.appendChild(el('tr', {}, [el('td', { class: 'num' }, String(n)), el('td', { class: 'qtext' }, [q.title, q.image ? el('div', { class: 'small' }, 'with a picture') : null]),
         el('td', { class: 'qkind' }, GoogleData.kindLabel(q.kind)), el('td', { class: 'num' }, String(q.points || 0)),
         el('td', { class: 'small' }, howMarked(q) + (q.correct && q.correct.length ? ' · key: ' + q.correct.join(' · ').slice(0, 80) : '')), el('td', {}, topic)]));
     });
     panel.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, ['#', 'Question', 'Kind', 'Marks', 'How it is marked', 'Topic'].map(function (h) { return el('th', {}, h); }))), tb])));
-    panel.appendChild(el('p', { class: 'small' }, 'The form\'s sections become topics; change a topic here if you wish. Topics group the results in the analysis.'));
-    var save = el('button', { class: 'btn btn--primary', type: 'button' }, quizId ? 'Save as a new version' : 'Add to my library');
+    panel.appendChild(el('p', { class: 'small' }, 'The form\'s sections become topics; change a topic here if you wish, or give every question one topic in the box above the questions. Topics group the results in the analysis.'));
+    var save = el('button', { class: 'btn btn--primary', type: 'button' }, quizId ? 'Save as a new version' : 'Add to my library'), once = saveId();
     save.addEventListener('click', function () {
-      UI.act(save, 'Saving…', API.call('quiz.save', { quiz: quiz, formId: formId, quizId: quizId || undefined }), 'The quiz is in your library.')
+      UI.act(save, 'Saving…', API.call('quiz.save', { quiz: quiz, formId: formId, quizId: quizId || undefined, saveId: once }), 'The quiz is in your library.')
         .then(function (r) { forget('quizzes'); refreshHome(); location.hash = '#quiz/' + r.quizId + '/' + r.version; }, noop);
     });
     panel.appendChild(el('div', { class: 'row' }, [save, el('a', { class: 'btn', href: '#quizzes' }, 'Cancel')]));
@@ -906,13 +1067,15 @@
     var titleIn = el('input', { type: 'text', value: copy.title });
     titleIn.addEventListener('input', function () { copy.title = titleIn.value; });
     box.appendChild(el('label', { class: 'field', style: 'margin-bottom:12px' }, ['Title', titleIn]));
-    var n = 0;
+    var n = 0, boxes = [];
+    box.appendChild(topicForAll(copy.questions.filter(function (q) { return ['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) >= 0; }), boxes));
     copy.questions.forEach(function (q) {
       if (['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) < 0) return;
       n++;
       var pts = el('input', { type: 'number', min: 0, max: 100, value: q.points || 0 });
       pts.addEventListener('input', function () { q.points = Number(pts.value) || 0; });
-      var topic = el('input', { type: 'text', value: q.topic || '' });
+      var topic = el('input', { type: 'text', value: q.topic || '', 'aria-label': 'Topic of question ' + n });
+      boxes.push(topic);
       topic.addEventListener('input', function () { q.topic = topic.value; });
       var text = el('textarea', { style: 'min-height:60px' }, q.title);
       text.addEventListener('input', function () { q.title = text.value; });
@@ -933,9 +1096,9 @@
       box.appendChild(el('div', { class: 'q' }, [el('div', { class: 'q__n' }, 'Question ' + n + ' · ' + GoogleData.kindLabel(q.kind)),
         text, el('div', { class: 'fields', style: 'margin:10px 0' }, [el('label', { class: 'field' }, ['Marks', pts]), el('label', { class: 'field' }, ['Topic', topic])]), keyBox]));
     });
-    var save = el('button', { class: 'btn btn--primary', type: 'button' }, 'Save as a new version');
+    var save = el('button', { class: 'btn btn--primary', type: 'button' }, 'Save as a new version'), once = saveId();
     save.addEventListener('click', function () {
-      UI.act(save, 'Saving…', API.call('quiz.save', { quiz: copy, quizId: quizId }), 'Saved as a new version.')
+      UI.act(save, 'Saving…', API.call('quiz.save', { quiz: copy, quizId: quizId, saveId: once }), 'Saved as a new version.')
         .then(function (r) { forget('quizzes'); location.hash = '#quiz/' + r.quizId + '/' + r.version; }, noop);
     });
     box.appendChild(el('div', { class: 'row' }, [save, el('a', { class: 'btn', href: location.hash, onclick: function () { setTimeout(route, 0); } }, 'Cancel')]));
@@ -956,24 +1119,71 @@
     app.appendChild(pick);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
+    /* Import from Google Classroom (Daniel, 11 Nov 2026: "triple check that actually if I do this for multiple classrooms, it's
+       not going to collapse, and actually every classroom is imported the right way"). The list stays on the page: each
+       class's line says what happened ("✓ 24 pupils imported", or why not), and Import all imports every class not yet in
+       Quiz Hall. Imports go to the back office ONE AT A TIME (`queue`): none waits on another's lock, the answers arrive in
+       order, and each carries My classes with every class imported so far, drawn below at once. The back office also knows a
+       Classroom class already in My classes (1_Teacher.gs _classSave_), so a second press or a request sent twice never makes
+       it twice. Once the last import is in, My classes is asked for once more. (Before 11 Nov 2026 each import jumped to its
+       class's page, and imports pressed together could make a class twice or show an older list.) */
+    var queue = Promise.resolve(), queued = 0, batch = { done: 0, failed: 0 };
+    function haveOf() { var h = {}; (kept.classes ? kept.classes.classes : []).forEach(function (c) { if (c.courseId) h[String(c.courseId)] = c; }); return h; }
     imp.addEventListener('click', function () {
       UI.act(imp, 'Asking Google…', GoogleData.courses()).then(function (courses) {
         UI.clear(pick);
         if (!courses.length) { pick.appendChild(el('div', { class: 'notice' }, 'Google Classroom shows no active class that you teach.')); return; }
-        var have = {};
-        (kept.classes ? kept.classes.classes : []).forEach(function (c) { if (c.courseId) have[c.courseId] = c; });
+        var have = haveOf(), lines = [];
+        var all = el('button', { class: 'btn btn--primary', type: 'button' }, 'Import all');
         var list = el('div', { class: 'list' });
         courses.forEach(function (c) {
-          var b = el('button', { class: 'btn btn--small' + (have[c.id] ? '' : ' btn--primary'), type: 'button' }, have[c.id] ? 'Check again' : 'Import');
-          b.addEventListener('click', function () {
-            UI.act(b, 'Importing…', GoogleData.students(c.id).then(function (pupils) {
-              return API.call('class.save', { classId: have[c.id] ? have[c.id].id : undefined, name: have[c.id] ? have[c.id].name : (c.name + (c.section ? ' ' + c.section : '')), courseId: c.id, pupils: pupils })
-                .then(function (r) { return took(r, r.classId); }).then(function (r) { return { r: r, n: pupils.length }; });
-            })).then(function (x) { UI.toast(UI.plural(x.n, 'pupil') + ' imported.'); refreshHome(); location.hash = '#cls/' + x.r.classId; }, noop);
-          });
-          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name), el('div', { class: 'list__sub' }, c.section)]), b]));
+          var L = { c: c, state: '' };
+          L.b = el('button', { class: 'btn btn--small' + (have[c.id] ? '' : ' btn--primary'), type: 'button', 'aria-label': (have[c.id] ? 'Check again: ' : 'Import ') + c.name }, have[c.id] ? 'Check again' : 'Import');
+          L.said = el('div', { class: 'list__sub', role: 'status' }, have[c.id] ? 'In My classes as ' + have[c.id].name : 'Not in Quiz Hall yet');
+          L.b.addEventListener('click', function () { enqueue(L); });
+          lines.push(L);
+          list.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, c.name + (c.section ? ' · ' + c.section : '')), L.said]), L.b]));
         });
-        pick.appendChild(el('section', { class: 'panel' }, [el('h2', {}, 'Your classes in Google Classroom'), list]));
+        function toDo() { var h = haveOf(); return lines.filter(function (L) { return !h[L.c.id] && L.state !== 'waiting' && L.state !== 'working'; }); }
+        function sayAll() { var n = toDo().length; all.hidden = !n; all.textContent = n === lines.length ? 'Import all ' + n : 'Import all ' + n + ' not in Quiz Hall yet'; }
+        all.addEventListener('click', function () { toDo().forEach(enqueue); });
+        function enqueue(L) {
+          if (L.state === 'waiting' || L.state === 'working') return;
+          if (!queued) batch = { done: 0, failed: 0 };
+          L.state = 'waiting'; L.b.disabled = true; L.b.textContent = 'Waiting…'; L.said.className = 'list__sub'; L.said.textContent = 'Waits for the classes before it…';
+          queued++; sayAll();
+          queue = queue.then(function () { return importOne(L); }).catch(noop);   /* one class's fault never holds the others */
+        }
+        function importOne(L) {
+          L.state = 'working'; L.b.textContent = 'Importing…'; L.b.classList.add('is-busy'); L.said.textContent = 'Reading the class list from Google Classroom…';
+          return GoogleData.students(L.c.id).then(function (pupils) {
+            var h = haveOf()[L.c.id];
+            L.said.textContent = 'Saving ' + UI.plural(pupils.length, 'pupil') + '…';
+            return API.call('class.save', { classId: h ? h.id : undefined, name: h ? h.name : (L.c.name + (L.c.section ? ' ' + L.c.section : '')), subject: h ? h.subject : '', courseId: L.c.id, pupils: pupils })
+              .then(function (r) { return took(r, r.classId).catch(function () { return r; }); })   /* saved: a list not redrawn is no failure */
+              .then(function (r) { return { r: r, n: pupils.length }; });
+          }).then(function (x) {
+            L.state = 'done'; batch.done++;
+            UI.clear(L.said); L.said.className = 'list__sub is-good';
+            L.said.appendChild(document.createTextNode('✓ ' + UI.plural(x.n, 'pupil') + ' imported · '));
+            L.said.appendChild(el('a', { href: '#cls/' + x.r.classId }, 'Open the class'));
+            L.b.textContent = 'Check again'; L.b.classList.remove('btn--primary'); L.b.setAttribute('aria-label', 'Check again: ' + L.c.name);
+            paint();
+          }, function (e) {
+            L.state = 'failed'; batch.failed++;
+            L.said.className = 'list__sub is-bad'; L.said.textContent = 'Not imported: ' + (e && e.message ? e.message : String(e));
+            L.b.textContent = 'Try again';
+          }).catch(noop).then(function () {
+            L.b.disabled = false; L.b.classList.remove('is-busy'); queued--; sayAll();
+            if (queued) return;
+            refreshHome();
+            UI.toast(batch.done ? UI.plural(batch.done, 'class', 'classes') + ' imported.' + (batch.failed ? ' ' + batch.failed + ' not: its line says why.' : '') : 'Not imported: the line says why.', !batch.done);
+            delete asking.classes; ask('classes').then(function () { paint(); }, noop);
+          });
+        }
+        sayAll();
+        pick.appendChild(el('section', { class: 'panel' }, [el('div', { class: 'head' }, [el('h2', {}, 'Your classes in Google Classroom'), all]),
+          el('p', { class: 'small' }, 'Press Import on a class, or Import all. They are imported one after another; each line says when its class is in.'), list]));
       }, function () {});
     });
     /* both lists in one piece (before 10 Nov 2026 the removed classes came in a second answer, a moment later) */
@@ -1028,7 +1238,7 @@
     app.appendChild(box);
     var paint = show(box, ['cls:' + classId], function (r) {
         var c = r.cls;
-        var acts = el('div', { class: 'row' }, [el('a', { class: 'btn btn--primary', href: '#run' }, 'Run a quiz'), el('a', { class: 'btn', href: '#results/' + c.id }, 'Results')]);
+        var acts = el('div', { class: 'row' }, [el('a', { class: 'btn btn--primary', href: '#run//' + c.id }, 'Run a quiz'), el('a', { class: 'btn', href: '#results/' + c.id }, 'Results')]);
         if (c.courseId) {
           var chk = el('button', { class: 'btn', type: 'button' }, 'Check against Classroom');
           chk.addEventListener('click', function () {

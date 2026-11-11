@@ -110,7 +110,8 @@
 
   /* ── Class ── */
   function classView(body, m, extra, o) {
-    body.appendChild(el('p', { class: 'small' }, 'Each cell is the pupil\'s score as a percentage. Point at a cell for the details; press a name or a quiz to open it.'));
+    body.appendChild(el('p', { class: 'small' }, 'Each cell is the pupil\'s score as a percentage. Point at a cell for the details; press a name or a quiz to open it.' +
+      (o.removeRun ? ' The × under a closed quiz removes its results for this class.' : '')));
     var legend = el('div', { class: 'legend' }, ['Score:', el('i', { style: 'background:var(--heat-1)' }), el('span', {}, 'under 40 %'),
       el('i', { style: 'background:var(--heat-2)' }), el('span', {}, '40–54'), el('i', { style: 'background:var(--heat-3)' }), el('span', {}, '55–69'),
       el('i', { style: 'background:var(--heat-4)' }), el('span', {}, '70–84'), el('i', { style: 'background:var(--heat-5)' }), el('span', {}, '85 and over'),
@@ -119,6 +120,13 @@
     var thead = el('tr', {}, [el('th', { class: 'name' }, 'Pupil')]);
     m.sittings.forEach(function (s) {
       var th = el('th', {}, el('a', { href: '#results/' + o.classId + '/quiz/' + s.id }, [UI.date(s.opens), el('br'), short(s.title, 14)]));
+      /* remove this run's results (teacher.js removeRun asks first; Daniel, 11 Nov 2026); a quiz still open has none */
+      if (o.removeRun && s.state !== 'open') {
+        var x = el('button', { class: 'xrun', type: 'button', 'aria-label': 'Remove the results of ' + s.title + ' (' + UI.date(s.opens) + ') for ' + m.cls.name }, '×');
+        x.addEventListener('click', function () { o.removeRun(s, x); });
+        tip(x, 'Remove the results of ' + s.title + ' for this class');
+        th.appendChild(x);
+      }
       thead.appendChild(th);
     });
     var tb = el('tbody');
@@ -158,8 +166,13 @@
       return el('option', { value: x.id, selected: x.id === s.id ? true : null }, UI.date(x.opens) + ' · ' + x.title);
     }));
     sel.addEventListener('change', function () { location.hash = '#results/' + o.classId + '/quiz/' + sel.value; });
+    var rm = null;
+    if (o.removeRun && s.state !== 'open') {
+      rm = el('button', { class: 'btn btn--small btn--danger', type: 'button' }, 'Remove these results');
+      rm.addEventListener('click', function () { o.removeRun(s, rm); });
+    }
     body.appendChild(el('div', { class: 'row', style: 'margin-bottom:12px' }, [sel, el('a', { class: 'btn btn--small', href: '#live/' + s.id }, 'Live page'),
-      s.partial ? el('a', { class: 'btn btn--small btn--primary', href: '#mark/' + s.id }, 'Mark the rest') : null]));
+      s.partial ? el('a', { class: 'btn btn--small btn--primary', href: '#mark/' + s.id }, 'Mark the rest') : null, rm]));
     var secs = s.list.map(function (x) { return x.secs; }).filter(Boolean).sort(function (a, b) { return a - b; });
     body.appendChild(el('p', {}, [el('strong', {}, s.list.length + ' of ' + m.pupils.filter(function (p) { return !p.left; }).length + ' pupils handed in'),
       ' · class average ' + round(s.avg) + ' %' + (secs.length ? ' · typical time ' + UI.mins(secs[Math.floor(secs.length / 2)]) : '') + (s.partial ? ' · some answers still to mark' : '')]));

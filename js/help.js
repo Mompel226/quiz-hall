@@ -9,7 +9,7 @@
   'use strict';
   var H = global.Help = {};
   var el = UI.el;
-  var V = '3';                      /* raise when the pictures in assets/help/ are taken again */
+  var V = '4';                      /* raise when the pictures in assets/help/ are taken again */
 
   /* "Press **Start now** (6)." → text, bold names, and (n) drawn like the pin it points to */
   function rich(s) {
@@ -140,7 +140,8 @@
     /* ── before the quiz ── */
     box = section(app, 'before', 'h-s-before', 'Before the quiz', 'Once for each class and each quiz.');
     box.appendChild(card('h-classes', 'Import a class from Google Classroom', 'My classes', [
-      p('**My classes** ▸ **Import from Google Classroom** lists your classes in Google Classroom. Choose one and it comes with its pupils. Google asks you once to let Quiz Hall read your classes.'),
+      p('**My classes** ▸ **Import from Google Classroom** lists your classes in Google Classroom. Press **Import** on a class and it comes with its pupils, or **Import all** for every class not in Quiz Hall yet. They are imported one after another, and each line says when its class is in. Google asks you once to let Quiz Hall read your classes.'),
+      p('A class already in My classes is never added twice: importing it again only brings its list up to date.', 'small'),
       p('Press a class to open its page:'),
       list(['(1) **Extra time** for a pupil: None, +10 %, +25 % or +50 %. Quiz Hall adds it to every quiz they sit, and the live page shows it beside their name.',
             '(2) **Check against Classroom** makes the list match Google Classroom again: new pupils in, leavers out.',
@@ -157,7 +158,9 @@
             '**Short answer**: at once; an answer close to the key (a near miss) comes to you to decide.',
             '**Paragraph**: you mark it after the quiz.']),
       p('**Left out:** lists anything Quiz Hall cannot run, such as a grid, a linear scale or an "Other" box. The form\'s sections become topics; change a topic here if you wish, because topics group the results.'),
-      example(['You changed the form after adding it: open the quiz ▸ **Import the form again**. It becomes version 2; pupils who sat version 1 keep it.']),
+      p('**Topic for every question**, above the questions, gives every question one topic at once. Each question keeps its own Topic box, for a subtopic. The same box is on **Change the key or points**.'),
+      example(['You changed the form after adding it: open the quiz ▸ **Import the form again**. It becomes version 2; pupils who sat version 1 keep it.',
+               'Several forms at once: paste one address on each line and press the button under them. Each form gets a line with what came across, what was left out and a box for its topic. Tick the ones you want and press **Add the ticked forms**. A form already in My quizzes starts unticked: ticked, it becomes a new version of your quiz.']),
       lock('Quiz Hall can read only a form you can edit. The pupils\' link (…/forms/d/e/…) does not work: copy the address of the editing page.')
     ], pic('t-add', 'Add a quiz from a Google Form: the form\'s address, then each question with how it is marked and its topic')));
 
@@ -210,7 +213,8 @@
             '(3) **Unlock** opens a locked pupil\'s quiz again. They have 45 seconds in which leaving does not lock again.',
             '(4) **+5 min**: five more minutes for that pupil.',
             '(5) **Close now** ends the quiz; the saved answers of pupils still writing are handed in.',
-            '(6) **Copy the link for pupils**.'])
+            '(6) **Copy the link for pupils**.']),
+      p('Once the quiz is closed, **Remove these results** is here too: the way to remove a run that nobody sat, which Results does not show.', 'small')
     ], pic('t-live', 'The live page: the test mode, the counts, and each pupil with Unlock and +5 min')));
 
     /* ── after the quiz ── */
@@ -231,9 +235,9 @@
     box.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
       views([
         { label: 'Class', pic: 't-results-class', alt: 'Results, Class: each pupil\'s percentage in each quiz, and the class average over time',
-          words: 'Each pupil\'s score in each quiz as a percentage, in colours from red (under 40 %) through orange, yellow and light green to dark green (85 % and over); the colours are shown above the table. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time.' },
+          words: 'Each pupil\'s score in each quiz as a percentage, in colours from red (under 40 %) through orange, yellow and light green to dark green (85 % and over); the colours are shown above the table. A * means answers are still to mark, and the percentage counts only the marks given so far. Point at a cell for the details; press a name or a quiz to open it. Below: the class average over time. The **×** under a closed quiz removes that quiz\'s results for this class (see below).' },
         { label: 'Quiz', pic: 't-results-quiz', alt: 'Results, Quiz: each question with the share of marks the class earned and the most common wrong answer',
-          words: 'One quiz: who handed in, the class average and the typical time, then each question from the lowest share of marks, its bar in the same colours, with the wrong answer most pupils chose. **Mark the rest** opens To mark.' },
+          words: 'One quiz: who handed in, the class average and the typical time, then each question from the lowest share of marks, its bar in the same colours, with the wrong answer most pupils chose. **Mark the rest** opens To mark; **Remove these results** removes this quiz\'s results for this class.' },
         { label: 'Topics', pic: 't-results-topics', alt: 'Results, Topics: the share of marks in each topic, weakest first',
           words: 'Every quiz this class has sat, by topic, weakest first. Topics come from your form\'s sections, or what you typed when you added the quiz.' },
         { label: 'Pupil', pic: 't-results-pupil', alt: 'Results, Pupil: one pupil against the class average, quiz by quiz',
@@ -241,7 +245,9 @@
         { label: 'Who to check on', pic: 't-results-check', alt: 'Results, Who to check on: pupils whose recent quizzes stand out, with the reason',
           words: 'Pupils whose recent quizzes stand out: well below the class, further down against the class in three quizzes running, or two quizzes not handed in. A reason to look, never a verdict.' }
       ]),
-      p('**Download** gives the view you are on as a spreadsheet file (CSV).', 'small')
+      p('**Download** gives the view you are on as a spreadsheet file (CSV).', 'small'),
+      p('Removing one quiz\'s results (the **×**, or **Remove these results**) asks you first. It deletes only that quiz\'s scores, answers and comments for this class, and cannot be undone. Everything else stays: other classes, other quizzes, other teachers\' results and these pupils\' other results.'),
+      lock('Only the teacher who ran the quiz can remove its results, and only once it is closed.')
     ]));
 
     /* ── classes ── */
@@ -249,7 +255,8 @@
     box.appendChild(card('h-remove', 'Remove a class, bring it back, or delete it for good', 'My classes', [
       list(['**Remove** (or **Remove this class** on its page) takes a class you no longer teach off your lists. Nothing is deleted: its results stay, and a quiz already running for it goes on.',
             '**Bring back**, under **Removed classes** at the bottom of My classes, undoes it.',
-            '**Delete for good**, beside Bring back, deletes the class with all its results. It cannot be undone.'])
+            '**Delete for good**, beside Bring back, deletes the class with all its results. It cannot be undone.',
+            'To remove the results of one quiz only, use the **×** on Results.'])
     ]));
 
     /* ── problems ── */
@@ -266,6 +273,7 @@
     box = section(app, 'know', 'h-s-know', 'Good to know', 'Rarely needed.');
     box.appendChild(card('h-kept', 'What is kept, who sees it, and for how long', '', [
       list(['Marks are kept. Written answers are kept until 31 July, the end of the school year; on 1 August the words are deleted and the marks stay. Download any you want to keep before then (**Results** ▸ **Download**).',
+            'Nothing else is deleted by itself, at the end of the year or at any time. Results go only when you remove them: one quiz for one class (the **×** on Results) or a whole class (**Delete for good**).',
             'You see only your own classes and results. A pupil sees only their own. A colleague who runs your shared quiz sees only their own results.',
             'Changing a quiz makes a new version. Pupils who already sat it keep the version they sat.',
             'Pupils\' pages save every 90 seconds or so, and at once on Hand in.'])

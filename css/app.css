@@ -223,6 +223,18 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 .heat td.h3 { background: var(--heat-3); color: var(--heat-ink); } .heat td.h4 { background: var(--heat-4); color: var(--heat-ink); }
 .heat td.h5 { background: var(--heat-5); color: var(--heat-ink-5); }
 .heat tr.avg td { font-weight: 700; }
+/* Results ▸ Class: the × under a closed quiz removes its results for the class (teacher.js removeRun asks first) */
+.heat th .xrun { display: block; margin: 4px auto 0; width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-2); font: inherit; font-size: 17px; line-height: 1; cursor: pointer; }
+.heat th .xrun:hover, .heat th .xrun:focus-visible { border-color: var(--bad); color: var(--bad); background: var(--bad-soft); }
+/* the line under a Classroom class or a form while it is imported: done in green, a refusal in red */
+.is-good { color: var(--good); } .is-bad { color: var(--bad); }
+/* Add a quiz: one box gives every question a topic; several forms read at once */
+.topic-all { border: 1px solid var(--line-2); border-radius: var(--radius); padding: 12px 14px; margin: 0 0 14px; }
+.topic-all .small { margin: 8px 0 0; }
+textarea.links-in { min-height: 48px; }
+.many .many__name { font-weight: 600; }
+.many details { margin-top: 4px; font-size: 14px; color: var(--ink-2); }
 .legend { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 22px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--bar-edge); }
 .legend i.none { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
