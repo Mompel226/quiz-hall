@@ -169,10 +169,18 @@
             '(2) **Try it as a pupil**: answer, try the lock, hand in, and see the score and the answers page, as a pupil will. Nothing is saved.',
             '(3) The versions: each change keeps the old version. Pupils always keep the version they sat.',
             '(4) **Change the key or points** fixes a wrong key or a mark; it saves a new version.',
-            '(5) **Share**: type a colleague\'s school address, or your department (for example Physics). They can run the quiz for their own classes and see only their own results. Only you can change it.',
-            '(6) **Move to the bin** takes it out of your list; open it from **In the bin** and press **Take out of the bin** to bring it back.']),
-      p('Below the buttons, every question with its key, its points, its topic and how it is marked.')
+            '(5) **Share** opens two ways to share. **With colleagues in Quiz Hall**: type a colleague\'s school address, or a department (for example Physics), and press **Share with them**. They find it in their My quizzes, run it for their own classes and see only their own results; only you can change it; its ✕ stops it. **As a new Google Form**: **Make a Google Form** puts a copy in your own Google Drive, for a teacher who does not use Quiz Hall.',
+            '(6) **Move to the bin**, here, hides the version you are looking at. In My quizzes it hides the whole quiz.']),
+      p('Below the buttons, every question with its key, its points, its topic and how it is marked.'),
+      p('In **My quizzes**, each quiz has **Open**, **Run**, **Share** and **Move to the bin**, so most jobs need no extra click.'),
+      example(['The Google Form copy is a quiz in Google Forms: the questions, the points, the answer key and the feedback. Google cannot fetch Quiz Hall\'s pictures, because they are shared with the school only, so the line under the button says how many to add by hand. The first time, Google asks you to let Quiz Hall make files in your Drive: it can reach only the files it makes.'])
     ], pic('t-quiz', 'A quiz\'s page: Run this quiz, Try it as a pupil, the versions, Change the key or points, Share, Move to the bin')));
+
+    box.appendChild(card('h-bin', 'The bin, and removing a quiz for good', 'My quizzes ▸ In the bin', [
+      list(['**Move to the bin** hides a quiz without deleting it, so a wrong click costs nothing. **Take out of the bin** brings it back as it was.',
+            '**Remove for good**, in the bin, deletes it. It asks you first, and it cannot be undone.',
+            'A version that a class sat, yours or a colleague\'s, is never removed for good: it stays in the bin, hidden, so those results still show. The bin says so. To delete it for good, first remove those results (the **×** on Results).'])
+    ]));
 
     box.appendChild(card('h-groups', 'Put your quizzes into groups', 'My quizzes ▸ Organise', [
       p('Press **Organise** (the first time: **Organise into groups**):'),
@@ -266,7 +274,8 @@
      ['A pupil\'s internet dropped', ['Their answers are kept on their computer and sent when the connection comes back. After 15 seconds offline the quiz locks (with Auto-lock on): unlock them when they are back online.']],
      ['A pupil is on a phone, an iPad or Safari', ['Quiz Hall does not open a quiz there: pupils need Google Chrome on a laptop or a Chromebook.']],
      ['The form will not come in', ['Copy the address of the form\'s editing page (…/forms/d/…/edit), not the pupils\' link (…/forms/d/e/…). You must be able to edit the form.']],
-     ['A colleague\'s quiz is not in My quizzes', ['Ask them to open the quiz ▸ **Share** and type your address or your department.']]
+     ['A colleague\'s quiz is not in My quizzes', ['Ask them to open the quiz ▸ **Share** ▸ With colleagues in Quiz Hall, and type your address or your department.']],
+     ['Make a Google Form does not work', ['Google asks once to let Quiz Hall make files in your Drive: tick that box. If Google says the app is not allowed, the school\'s Google admin must allow Quiz Hall to use Google Drive.']]
     ].forEach(function (q, i) { box.appendChild(card('h-p' + i, q[0], '', q[1].map(function (s) { return p(s); }))); });
 
     /* ── rarely needed ── */

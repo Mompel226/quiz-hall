@@ -380,3 +380,12 @@ button.group__head:focus-visible { outline: 2px solid var(--accent); outline-off
   .hsteps li { flex-wrap: wrap; }
 }
 @media print { .top, .foot, .nav, .btn { display: none !important; } body { background: #fff; } }
+/* My quizzes: each quiz's buttons (Open, Run, Share, Move to the bin) keep together and go under the name on a phone */
+.qacts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) { .list__item.qrow { flex-wrap: wrap; } .list__item.qrow .qacts { width: 100%; justify-content: flex-start; } }
+/* Share: two parts, each with its heading; a colleague or department per chip, ✕ stops it */
+.share__part + .share__part { border-top: 1px solid var(--line-2); margin-top: 16px; padding-top: 14px; }
+.share__part h3 { margin: 0 0 6px; }
+.share__chips { gap: 6px; }
+.chip--x { border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; padding: 5px 12px; }
+.chip--x:hover, .chip--x:focus-visible { border-color: var(--bad); color: var(--bad); }

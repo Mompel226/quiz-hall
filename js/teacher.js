@@ -647,9 +647,19 @@
       var main = el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, q.title),
         el('div', { class: 'list__sub' }, [UI.plural(q.questions, 'question') + ' · ' + UI.plural(q.points, 'mark') + ' · version ' + q.version +
           (q.topics.length ? ' · ' + q.topics.join(', ') : '') + (q.mine ? '' : ' · shared by ' + q.owner.split('@')[0])])]);
-      if (!organising) return el('div', { class: 'list__item' }, [main,
-        el('a', { class: 'btn', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open'),
-        el('a', { class: 'btn btn--primary', href: '#run/' + q.quizId }, 'Run')]);
+      /* each quiz's own buttons (Daniel, 11 Nov 2026: "when you click my quizzes, you could either open, you can share, you can
+         delete, or you can run"); Move to the bin only for your own, and it can be undone (In the bin, below) */
+      if (!organising) {
+        var acts = [el('a', { class: 'btn btn--small', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open'),
+          el('a', { class: 'btn btn--small btn--primary', href: '#run/' + q.quizId }, 'Run'),
+          el('a', { class: 'btn btn--small', href: '#quiz/' + q.quizId + '/' + q.version + '/share' }, 'Share')];
+        if (q.mine) {
+          var bb = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Move ' + q.title + ' to the bin' }, 'Move to the bin');
+          bb.addEventListener('click', function () { binQuiz(q, bb, true); });
+          acts.push(bb);
+        }
+        return el('div', { class: 'list__item qrow' }, [main, el('div', { class: 'qacts' }, acts)]);
+      }
       var pick = el('select', { 'aria-label': 'Group for ' + q.title },
         [el('option', { value: '' }, 'Not in a group')].concat(groups.g.map(function (g) {
           return el('option', { value: g.id, selected: groups.of[q.quizId] === g.id ? true : null }, g.name);
@@ -660,6 +670,33 @@
         save(next, '');
       });
       return el('div', { class: 'list__item' }, [main, el('label', { class: 'grouppick' }, ['Group', pick])]);
+    }
+    /* the bin (Daniel, 11 Nov 2026: "If I delete one, why is there a bin? … if I want to permanently delete it, how can that be
+       done?"): Move to the bin hides every version and can be undone; Remove for good deletes the versions no class sat (one
+       a class sat stays hidden, so its results still show: 1_Teacher.gs _quizDelete_; quizzes.list says which, `sat`) */
+    function binQuiz(q, btn, on) {
+      UI.act(btn, on ? 'Moving…' : 'Taking out…', API.call('quiz.bin', { quizId: q.quizId, inBin: on }).then(tookQuizzes),
+        on ? '“' + q.title + '” is in the bin, at the bottom of My quizzes. You can take it out again there.' : '“' + q.title + '” is back in My quizzes.')
+        .then(function () { refreshHome(); if (paint) paint(); }, noop);
+    }
+    function removeForGood(q, btn) {
+      var vs = (q.versions || []).filter(function (v) { return v.sat !== true; });
+      if (!vs.length) return;
+      if (!window.confirm('Remove “' + q.title + '” for good?\n\n' + (vs.length > 1 ? 'Its ' + vs.length + ' versions that no class sat are deleted. ' : 'It is deleted. ') +
+        'This cannot be undone. A version a class sat stays in the bin, hidden, so its results still show.')) return;
+      var gone = 0, kept = 0, i = 0;
+      function next() {
+        if (i >= vs.length) return Promise.resolve();
+        var v = vs[i++];
+        return API.call('quiz.delete', { quizId: q.quizId, version: v.version }).then(function (r) { gone++; forget('quiz:' + q.quizId + '@' + v.version); return tookQuizzes(r); },
+          function (e) { if (/Pupils sat this version/.test(e && e.message || '')) kept++; else throw e; }).then(next);
+      }
+      UI.act(btn, 'Removing…', next()).then(function () {
+        UI.toast(!gone ? 'Nothing removed: a class sat it, so it stays hidden to keep the results. Remove those results first (the × on Results).'
+          : kept ? UI.plural(gone, 'version') + ' removed for good. ' + UI.plural(kept, 'version') + ' a class sat ' + (kept === 1 ? 'stays' : 'stay') + ' hidden, to keep the results.'
+          : '“' + q.title + '” is removed for good.');
+        if (paint) paint();
+      }, function () { forget('quizzes'); ask('quizzes').then(function () { if (paint) paint(); }, noop); });
     }
     /* one change: the controls wait, the bar says Saving…, and the page is drawn again from what the back office kept */
     function save(next, done) {
@@ -763,9 +800,26 @@
         box.appendChild(el('h3', {}, 'In the bin'));
         var bl = el('div', { class: 'list' });
         bin.forEach(function (q) {
-          bl.appendChild(el('div', { class: 'list__item' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, q.title)]),
-            el('a', { class: 'btn', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open')]));
+          var vs = q.versions || [], known = vs.length && vs.every(function (v) { return v.sat !== undefined; });
+          var sat = vs.filter(function (v) { return v.sat === true; }).length, free = vs.length - sat, note = null;
+          var acts = [el('a', { class: 'btn btn--small', href: '#quiz/' + q.quizId + '/' + q.version }, 'Open')];
+          if (q.mine) {
+            var back = el('button', { class: 'btn btn--small', type: 'button', 'aria-label': 'Take ' + q.title + ' out of the bin' }, 'Take out of the bin');
+            back.addEventListener('click', function () { binQuiz(q, back, false); });
+            acts.push(back);
+            if (!known || free) {          /* a back office before 11 Nov 2026 does not say which versions a class sat: the button tries */
+              var del = el('button', { class: 'btn btn--small btn--danger', type: 'button', 'aria-label': 'Remove ' + q.title + ' for good' },
+                known && sat ? 'Remove ' + UI.plural(free, 'version') + ' for good' : 'Remove for good');
+              del.addEventListener('click', function () { removeForGood(q, del); });
+              acts.push(del);
+            }
+            if (known && sat) note = sat === vs.length ? 'Kept hidden: a class sat it, so its results still show. To delete it for good, first remove those results (the × on Results).'
+              : UI.plural(sat, 'version') + ' a class sat ' + (sat === 1 ? 'stays' : 'stay') + ' hidden, so the results still show.';
+          }
+          bl.appendChild(el('div', { class: 'list__item qrow' }, [el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, q.title),
+            note ? el('div', { class: 'list__sub' }, note) : null]), el('div', { class: 'qacts' }, acts)]));
         });
+        box.appendChild(el('p', { class: 'small' }, 'The bin hides a quiz without deleting it: Take out of the bin brings it back as it was.'));
         box.appendChild(bl);
       }
     });
@@ -994,11 +1048,12 @@
   }
 
   /* one quiz: its questions with the key, its versions, run, edit, share, bin */
-  function quizPage(quizId, version) {
+  function quizPage(quizId, version, open) {
     var app = page('Quiz', 'quizzes', ['#quizzes', 'My quizzes']);
     var box = el('div', {}, el('p', { class: 'muted' }, 'Loading…'));
     app.appendChild(box);
-    show(box, ['quiz:' + quizId + '@' + Number(version), 'quizzes'], function (r, all) {
+    var shareOpen = open === 'share', paint = null;      /* #quiz/<id>/<version>/share (My quizzes ▸ Share) opens it at once */
+    paint = show(box, ['quiz:' + quizId + '@' + Number(version), 'quizzes'], function (r, all) {
       var meta = all.filter(function (q) { return q.quizId === quizId; })[0] || { versions: [], sharedWith: [] };
       var quiz = r.quiz, v = meta.versions.filter(function (x) { return x.version === Number(version); })[0] || {};
       var vs = el('select', { 'aria-label': 'Version' }, meta.versions.map(function (x) {
@@ -1007,18 +1062,13 @@
       vs.addEventListener('change', function () { location.hash = '#quiz/' + quizId + '/' + vs.value; });
       var acts = el('div', { class: 'row' }, [v.inBin ? null : el('a', { class: 'btn btn--primary', href: '#run/' + quizId }, 'Run this quiz'),
         el('a', { class: 'btn', href: '#try/' + quizId + '/' + version }, 'Try it as a pupil'), vs]);
+      var share = el('button', { class: 'btn', type: 'button', 'aria-expanded': String(shareOpen) }, 'Share');
+      share.addEventListener('click', function () { shareOpen = !shareOpen; paint(); });
       if (r.mine) {
         var edit = el('button', { class: 'btn', type: 'button' }, 'Change the key or points');
         edit.addEventListener('click', function () { editQuiz(box, quiz, quizId); });
         acts.appendChild(edit);
         if (r.formId) acts.appendChild(el('a', { class: 'btn', href: '#add/' + quizId }, 'Import the form again'));
-        var share = el('button', { class: 'btn', type: 'button' }, 'Share');
-        share.addEventListener('click', function () {
-          var now = (meta.sharedWith || []).join(', ');
-          var val = window.prompt('Share this quiz with colleagues: type their school addresses or a department\'s name (for example Physics), separated by commas. They can run it; only you can change it. Results are never shared.', now);
-          if (val === null) return;
-          UI.act(share, 'Sharing…', API.call('quiz.share', { quizId: quizId, sharedWith: val }).then(tookQuizzes), val.trim() ? 'Shared.' : 'No longer shared.').then(noop, noop);
-        });
         acts.appendChild(share);
         var bin = el('button', { class: 'btn btn--danger', type: 'button' }, v.inBin ? 'Take out of the bin' : 'Move to the bin');
         bin.addEventListener('click', function () {
@@ -1035,10 +1085,63 @@
           acts.appendChild(del);
         }
       }
+      if (!r.mine) acts.appendChild(share);
       box.appendChild(el('div', { class: 'head' }, [el('div', {}, [el('h1', {}, quiz.title), el('p', { class: 'small' },
         (r.mine ? 'Yours' : 'Shared by ' + meta.owner) + ((meta.sharedWith || []).length && r.mine ? ' · shared with ' + meta.sharedWith.join(', ') : ''))]), acts]));
+      if (shareOpen) box.appendChild(sharePanel(quizId, Number(version), quiz.title, meta.sharedWith || [], r.mine, function () { paint(); }));
       box.appendChild(questionList(quiz));
     });
+  }
+  /* Share (Daniel, 11 Nov 2026): "sharing within the department so … all the teachers are available within the system", or
+     "outside … creating a new Google form". With colleagues in Quiz Hall: your own quizzes only, an address or a department
+     per chip (✕ stops it), saved at once (quiz.share). As a new Google Form: anyone who has the quiz; forms.js makeForm, in
+     the teacher's own Drive, with Google's permission for only the files Quiz Hall makes (asked in the same click). */
+  function sharePanel(quizId, version, title, shared, mine, redraw) {
+    var wrap = el('section', { class: 'panel share', id: 'sharePanel' }, [el('h2', {}, 'Share “' + title + '”')]);
+    if (mine) {
+      var chips = el('div', { class: 'row share__chips' });
+      var inp = el('input', { type: 'text', 'aria-label': 'School addresses or a department', placeholder: 'A school address, or a department such as Physics' });
+      var add = el('button', { class: 'btn btn--primary', type: 'button' }, 'Share with them');
+      function saveList(next, btn, done) {
+        UI.act(btn, 'Saving…', API.call('quiz.share', { quizId: quizId, sharedWith: next.join(', ') }).then(tookQuizzes), done).then(function () { redraw(); }, noop);
+      }
+      if (!shared.length) chips.appendChild(el('span', { class: 'small muted' }, 'Not shared with anyone yet.'));
+      shared.forEach(function (who) {
+        var x = el('button', { class: 'chip chip--x', type: 'button', 'aria-label': 'Stop sharing with ' + who }, [who, el('span', { 'aria-hidden': 'true' }, ' ✕')]);
+        x.addEventListener('click', function () { saveList(shared.filter(function (w) { return w !== who; }), x, 'No longer shared with ' + who + '.'); });
+        chips.appendChild(x);
+      });
+      function addThem() {
+        var seen = {}, next = [];
+        shared.concat(inp.value.split(/[,;\n]/)).map(function (x) { return x.trim(); }).filter(String).forEach(function (x) { var k = x.toLowerCase(); if (!seen[k]) { seen[k] = 1; next.push(x); } });
+        if (next.length === shared.length) { UI.toast('Type a school address or a department first.', true); inp.focus(); return; }
+        saveList(next, add, 'Shared. They find it in their My quizzes.');
+      }
+      add.addEventListener('click', addThem);
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addThem(); } });
+      wrap.appendChild(el('div', { class: 'share__part' }, [el('h3', {}, 'With colleagues in Quiz Hall'),
+        el('p', { class: 'small' }, 'Colleagues you add find this quiz in their My quizzes, and so do all the teachers of a department you add. They can run it with their classes and try it; only you can change it. Results are never shared.'),
+        chips, el('div', { class: 'row', style: 'margin-top:10px' }, [el('div', { style: 'flex:1 1 280px' }, inp), add])]));
+    }
+    var make = el('button', { class: 'btn', type: 'button' }, 'Make a Google Form');
+    var said = el('p', { class: 'small', role: 'status' });
+    make.addEventListener('click', function () {
+      said.className = 'small'; said.textContent = '';
+      /* Google's permission first, in the click itself, so its window is never blocked */
+      UI.act(make, 'Making the form…', GoogleData.token(GoogleData.MAKE_SCOPES).then(function () { return have('quiz:' + quizId + '@' + version); })
+        .then(function (r) { return GoogleData.makeForm(r.quiz); })).then(function (f) {
+        UI.clear(said); said.className = 'small is-good';
+        said.appendChild(document.createTextNode('✓ Made in your Google Drive. '));
+        said.appendChild(el('a', { href: f.editUrl, target: '_blank', rel: 'noopener' }, 'Open it in Google Forms ↗'));
+        if (f.pictures === 'left out') said.appendChild(document.createTextNode(' Google could not copy the ' + UI.plural(f.count, 'picture') + ' (Quiz Hall shares them with the school only): add them in Google Forms.'));
+        UI.toast('The Google Form is made in your Google Drive.');
+      }, function (e) { said.className = 'small is-bad'; said.textContent = e && e.message ? e.message : String(e); });
+    });
+    wrap.appendChild(el('div', { class: 'share__part' }, [el('h3', {}, 'As a new Google Form'),
+      el('p', { class: 'small' }, 'For a teacher who does not use Quiz Hall. Quiz Hall makes a copy in your own Google Drive: the questions, the points, the answer key and the feedback. You then share it like any form. Changes to it do not come back to Quiz Hall.'),
+      el('p', { class: 'small' }, 'The first time, Google asks you to let Quiz Hall make files in your Google Drive. It can reach only the files it makes.'),
+      el('div', { class: 'row' }, [make]), said]));
+    return wrap;
   }
   function questionList(quiz) {
     var wrap = el('div'), n = 0;

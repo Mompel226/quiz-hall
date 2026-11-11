@@ -5,20 +5,29 @@
   'use strict';
   var G = global.GoogleData = {};
   var CFG = global.QH_CONFIG || {};
-  var access = null;            /* { token, until } */
+  var access = {};              /* the scopes asked for → { token, until } */
+  /* Making a Google Form from a quiz (11 Nov 2026) needs one permission more, asked for only then: drive.file, which reaches
+     only the files Quiz Hall itself makes (never the teacher's other forms or files) */
+  var MAKE_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+  G.MAKE_SCOPES = MAKE_SCOPES;
 
-  /* Google's permission for Classroom and Forms, asked for only when the teacher imports something */
-  G.token = function () {
-    if (access && access.until > Date.now() + 60000) return Promise.resolve(access.token);
+  /* Google's permission for Classroom and Forms, asked for only when the teacher imports something; `extra` adds scopes for
+     one job (Google asks only for what was not given before) */
+  G.token = function (extra) {
+    var scope = (CFG.googleScopes || []).concat(extra || []).join(' '), a = access[scope];
+    if (a && a.until > Date.now() + 60000) return Promise.resolve(a.token);
     return new Promise(function (resolve, reject) {
       if (!(global.google && google.accounts && google.accounts.oauth2)) return reject(new Error('Google is still loading. Try again in a moment.'));
       var who = global.SignIn && SignIn.who();
       var client = google.accounts.oauth2.initTokenClient({
-        client_id: CFG.googleClientId, scope: (CFG.googleScopes || []).join(' '), hint: who ? who.email : undefined,
+        client_id: CFG.googleClientId, scope: scope, hint: who ? who.email : undefined, include_granted_scopes: true,
         callback: function (r) {
-          if (!r || r.error || !r.access_token) return reject(new Error(r && r.error === 'access_denied' ? 'Quiz Hall needs your permission to read your classes and forms.' : 'Google did not give permission.'));
-          access = { token: r.access_token, until: Date.now() + (Number(r.expires_in) || 3000) * 1000 };
-          resolve(access.token);
+          if (!r || r.error || !r.access_token) return reject(new Error(r && r.error === 'access_denied' ? (extra ? 'Quiz Hall needs your permission to make the form in your Google Drive.' : 'Quiz Hall needs your permission to read your classes and forms.') : 'Google did not give permission.'));
+          /* Google lets a teacher untick a box: without the extra one the form cannot be made */
+          if (extra && google.accounts.oauth2.hasGrantedAllScopes && !google.accounts.oauth2.hasGrantedAllScopes.apply(null, [r].concat(extra)))
+            return reject(new Error('Quiz Hall needs your permission to make the form in your Google Drive. Press the button again and tick that box.'));
+          access[scope] = { token: r.access_token, until: Date.now() + (Number(r.expires_in) || 3000) * 1000 };
+          resolve(r.access_token);
         },
         error_callback: function () { reject(new Error('The Google window was closed.')); }
       });
@@ -74,6 +83,101 @@
     return { error: 'That does not look like a Google Form address.' };
   };
   G.form = function (id) { return get('https://forms.googleapis.com/v1/forms/' + encodeURIComponent(id)); };
+
+  /* ── a quiz made into a new Google Form (Daniel, 11 Nov 2026: share it "outside … creating a new Google form" for a
+     teacher who does not use Quiz Hall) ──
+     In the teacher's own Drive, with their own permission (drive.file). The form is made, then filled in ONE batch, which
+     Google applies whole or not at all: first with the pictures; if Google cannot fetch them (they are shared with the
+     school only), again without them; if that fails too, the empty form is deleted and the reason given. The form is a
+     quiz in Google Forms: points, the answer key and the feedback come across; changes to it never come back to Quiz Hall.
+     → { formId, editUrl, pictures: 'all' | 'none' | 'left out', count } */
+  function send(method, url, body) {
+    return G.token(MAKE_SCOPES).then(function (tok) {
+      return fetch(url, { method: method, headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) { j = {}; }
+            if (!r.ok) {
+              var m = j && j.error && j.error.message ? j.error.message : 'error ' + r.status;
+              if (/has not been used|is disabled/i.test(m)) m = 'This Google service is not switched on for Quiz Hall yet. Tell Dr Mompel Riera.';
+              var e = new Error('Google did not make the form: ' + m); e.google = true;   /* Google answered: nothing of that request went in */
+              throw e;
+            }
+            return j;
+          });
+        });
+    });
+  }
+  var PIC = function (id) { return 'https://lh3.googleusercontent.com/d/' + id; };
+  /* the requests that fill the form, with or without pictures */
+  G.formRequests = function (quiz, withPictures) {
+    var reqs = [], at = 0, pics = 0;
+    if (quiz.description) reqs.push({ updateFormInfo: { info: { description: String(quiz.description) }, updateMask: 'description' } });
+    reqs.push({ updateSettings: { settings: { quizSettings: { isQuiz: true } }, updateMask: 'quizSettings.isQuiz' } });
+    function words(q) {                               /* an item's title is one line: the rest goes in its description */
+      var t = String(q.title || '').replace(/\r/g, ''), i = t.indexOf('\n'), d = String(q.help || '');
+      if (i >= 0) { d = t.slice(i + 1).trim() + (d ? '\n\n' + d : ''); t = t.slice(0, i); }
+      var o = { title: t.trim() }; if (d.trim()) o.description = d.trim();
+      return o;
+    }
+    function add(item) { reqs.push({ createItem: { item: item, location: { index: at++ } } }); }
+    (quiz.questions || []).forEach(function (q) {
+      var item = words(q);
+      if (q.kind === 'section') { item.pageBreakItem = {}; return add(item); }
+      if (q.kind === 'info') { if (!item.title && !item.description) return; item.textItem = {}; return add(item); }
+      if (q.kind === 'image') {
+        if (!q.image) return;
+        pics++; if (!withPictures) return;
+        item.imageItem = { image: { sourceUri: PIC(q.image) } }; return add(item);
+      }
+      if (['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) < 0) return;
+      var question = { required: false }, grading = q.points ? { pointValue: Math.round(q.points) } : null, correct = q.correct || [];
+      if (q.kind === 'choice' || q.kind === 'checkbox') {
+        var seen = {}, as = {}, opts = (q.options || []).map(function (o, i) {
+          var v = String(o.label || '').replace(/\s+/g, ' ').trim() || ('Option ' + (i + 1)), base = v, n = 2;
+          while (seen[v.toLowerCase()]) v = base + ' (' + (n++) + ')';      /* Google refuses two options alike */
+          seen[v.toLowerCase()] = 1; as[o.label] = as[o.label] || v;
+          var opt = { value: v };
+          if (o.image) { pics++; if (withPictures) opt.image = { sourceUri: PIC(o.image) }; }
+          return opt;
+        });
+        if (!opts.length) return;
+        question.choiceQuestion = { type: q.kind === 'checkbox' ? 'CHECKBOX' : 'RADIO', options: opts };
+        var keys = correct.map(function (c) { return as[c]; }).filter(Boolean);
+        if (q.kind === 'choice') keys = keys.slice(0, 1);                   /* one right answer in a multiple choice */
+        if (grading && keys.length) {
+          grading.correctAnswers = { answers: keys.map(function (v) { return { value: v }; }) };
+          if (q.fbRight || q.fb) grading.whenRight = { text: String(q.fbRight || q.fb) };
+          if (q.fbWrong || q.fb) grading.whenWrong = { text: String(q.fbWrong || q.fb) };
+        } else if (grading && (q.fb || q.fbRight)) grading.generalFeedback = { text: String(q.fb || q.fbRight) };
+      } else {
+        question.textQuestion = { paragraph: q.kind === 'paragraph' };
+        if (grading && q.kind === 'short' && correct.length) grading.correctAnswers = { answers: correct.map(function (v) { return { value: String(v) }; }) };
+        if (grading && (q.fb || q.fbRight)) grading.generalFeedback = { text: String(q.fb || q.fbRight) };
+      }
+      if (grading) question.grading = grading;
+      item.questionItem = { question: question };
+      if (q.image) { pics++; if (withPictures) item.questionItem.image = { sourceUri: PIC(q.image) }; }
+      add(item);
+    });
+    return { requests: reqs, pictures: pics };
+  };
+  G.makeForm = function (quiz) {
+    var title = String(quiz.title || 'Quiz').slice(0, 300);
+    return send('POST', 'https://forms.googleapis.com/v1/forms', { info: { title: title, documentTitle: title } }).then(function (f) {
+      var id = f.formId, url = 'https://forms.googleapis.com/v1/forms/' + encodeURIComponent(id) + ':batchUpdate';
+      var full = G.formRequests(quiz, true), done = { formId: id, editUrl: 'https://docs.google.com/forms/d/' + id + '/edit', count: full.pictures };
+      return send('POST', url, { requests: full.requests }).then(function () { done.pictures = full.pictures ? 'all' : 'none'; return done; }, function (e) {
+        if (!full.pictures || !e.google) throw e;
+        return send('POST', url, { requests: G.formRequests(quiz, false).requests }).then(function () { done.pictures = 'left out'; return done; });
+      }).catch(function (e) {
+        /* Google refused: nothing went in, so the empty form is deleted (drive.file reaches it, as Quiz Hall made it). The
+           connection dropped instead: it may have gone in, so nothing is sent again and nothing deleted. */
+        if (!e.google) throw new Error('The connection dropped while Google was making the form. Look in your Google Drive for “' + title + '” before you try again.');
+        return send('DELETE', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id)).catch(function () {}).then(function () { throw e; });
+      });
+    });
+  };
 
   var KIND_LABEL = { choice: 'One answer', checkbox: 'Tick boxes', short: 'Short answer', paragraph: 'Paragraph', info: 'Text', image: 'Picture', section: 'Section' };
   G.kindLabel = function (k) { return KIND_LABEL[k] || k; };
