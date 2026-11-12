@@ -203,7 +203,7 @@
       h.recent.forEach(function (s) {
         l3.appendChild(el('div', { class: 'list__item' }, [
           el('div', { class: 'list__main' }, [el('div', { class: 'list__title' }, s.title + ' · ' + s.className),
-            el('div', { class: 'list__sub' }, UI.dateTime(s.opens) + (s.released ? ' · answers released' : ''))]),
+            el('div', { class: 'list__sub' }, UI.dateTime(s.opens) + (s.atHandin ? ' · answers shown at hand-in' : s.released ? ' · answers released' : ''))]),
           el('a', { class: 'btn', href: '#live/' + s.id }, 'See it')]));
       });
       rec.appendChild(l3);
@@ -251,11 +251,14 @@
       var mode = lastMode(), modeBox = el('div');
       function drawModes() { UI.clear(modeBox); modeBox.appendChild(modeSwitches(mode, function (n) { mode = n; drawModes(); })); }
       drawModes();
+      var atHandin = true, ansBox = el('div');      /* as soon as they hand in, every time (Daniel, 12 Nov 2026: "by default") */
+      function drawAnswers() { UI.clear(ansBox); ansBox.appendChild(answerChoice(atHandin, function (v) { atHandin = v; drawAnswers(); })); }
+      drawAnswers();
       go.addEventListener('click', function () {
         var q = qz.filter(function (x) { return x.quizId === quizSel.value; })[0];
         var opensAt = when.value === 'later' && at.value ? new Date(at.value).getTime() : 0;
         rememberMode(mode);
-        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt, mode: mode })
+        UI.act(go, 'Starting…', API.call('sitting.start', { quizId: q.quizId, version: q.version, classId: clsSel.value, minutes: Number(mins.value), opensAt: opensAt, mode: mode, atHandin: atHandin })
           .then(function (r) { if (r.live) keep('live:' + r.sittingId, r.live); return r; }), 'The quiz is open for the class.')
           .then(function (r) { refreshHome(); location.hash = '#live/' + r.sittingId; }, noop);
       });
@@ -265,6 +268,8 @@
       box.appendChild(info);
       box.appendChild(el('h3', {}, 'Test mode'));
       box.appendChild(modeBox);
+      box.appendChild(el('h3', {}, 'When pupils see the right answers'));
+      box.appendChild(ansBox);
       box.appendChild(el('div', { class: 'row' }, [go]));
       box.appendChild(el('div', { class: 'row pupilsway' }, [el('p', { class: 'small' }, 'Pupils sign in on nlcsbiology.com and the quiz is on its front page, or they open nlcsbiology.com/quiz-hall. Use Chrome on a laptop. Pin the link once in each Google Classroom.'),
         copyLinkButton()]));
@@ -299,6 +304,23 @@
     return wrap;
   }
 
+  /* ── When pupils see the right answers (Daniel, 12 Nov 2026, from a colleague: pupils go through their answers with a
+     pen straight after the quiz): as soon as each one hands in (the default), or when the teacher releases them after the
+     close (written answers marked first, or everyone at the same time). 1_Teacher.gs _sittingAnswers_. ── */
+  var answerSeq = 0;
+  function answerChoice(atHandin, onChange, busy) {
+    var wrap = el('div', { class: 'modes' }), name = 'answers' + (++answerSeq);
+    [[true, 'As soon as they hand in', 'Each pupil sees every question, their answer, the right answer and the form\'s feedback straight after they hand in. An answer you mark yourself says "not marked yet" until you mark it.'],
+     [false, 'When I release them', 'Pupils see only their score until you press Release the answers, after the quiz is closed. Choose this to mark written answers first, or to show the whole class the answers at the same time.']]
+      .forEach(function (x) {
+        var rb = el('input', { type: 'radio', name: name, value: x[0] ? 'handin' : 'release', checked: x[0] === atHandin ? true : null, disabled: busy ? true : null });
+        rb.addEventListener('change', function () { if (rb.checked) onChange(x[0]); });
+        wrap.appendChild(el('label', { class: 'mode' }, [el('span', { class: 'mode__head' }, [rb, el('strong', {}, x[1])]),
+          el('span', { class: 'mode__hint' }, busy && x[0] === atHandin ? 'Saving…' : x[2])]));
+      });
+    return wrap;
+  }
+
   /* ── the live page ─────────────────────────────────────── */
   function stopLive() { if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; } }
   var STATUS = { waiting: ['Not begun', ''], writing: ['Writing', 'chip--accent'], locked: ['Locked', 'chip--bad'], handed: ['Handed in', 'chip--good'] };
@@ -306,9 +328,9 @@
                  offline: 'offline 15 s', right_click: 'right-clicks', focus_lost: 'left the window' };
   function live(sid) {
     var app = page('Live', 'home', ['#home', 'Today']);
-    var head = el('div', { class: 'head' }), modeWrap = el('div'), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
-    app.appendChild(head); app.appendChild(modeWrap); app.appendChild(top); app.appendChild(body);
-    var last = null, seq = 0, barrier = 0, acting = 0, modeDrawn = '';
+    var head = el('div', { class: 'head' }), modeWrap = el('div'), ansWrap = el('div'), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));
+    app.appendChild(head); app.appendChild(modeWrap); app.appendChild(ansWrap); app.appendChild(top); app.appendChild(body);
+    var last = null, seq = 0, barrier = 0, acting = 0, modeDrawn = '', ansDrawn = '';
     /* the switches are drawn again only when the run's mode changes, so a 5-second check never moves them under a click */
     function drawMode(s, busy) {
       var sig = (s.state === 'open') + JSON.stringify(modeOf(s.mode)) + (busy ? 'busy' : '');
@@ -317,6 +339,23 @@
       if (s.state !== 'open') return;
       modeWrap.appendChild(el('section', { class: 'panel panel--tight' }, [el('h3', {}, 'Test mode'),
         modeSwitches(modeOf(s.mode), function (n) { setMode(s, n); }, busy)]));
+    }
+    /* when pupils see the answers: open or closed, drawn again only when it changes (never under a click) */
+    function drawAnswers(s, busy) {
+      var sig = String(!!s.atHandin) + (busy ? 'busy' : '');
+      if (sig === ansDrawn) return;
+      ansDrawn = sig; UI.clear(ansWrap);
+      ansWrap.appendChild(el('section', { class: 'panel panel--tight' }, [el('h3', {}, 'When pupils see the right answers'),
+        answerChoice(!!s.atHandin, function (v) { setAnswers(s, v); }, busy)]));
+    }
+    function setAnswers(s, v) {
+      acting++;
+      drawAnswers({ atHandin: v }, true);
+      API.call('sitting.answers', { sittingId: sid, atHandin: v }).then(function (r) { return r.live || API.call('sitting.live', { sittingId: sid }, { quiet: true }); })
+        .then(function (r) {
+          acting--; barrier = ++seq; draw(r);
+          UI.toast(v ? 'Saved. Each pupil who has handed in sees the right answers.' : r.sitting && r.sitting.released ? 'Saved. The answers are still released: press Hide the answers again to hide them.' : 'Saved. Pupils see only their score until you release the answers.');
+        }, function (e) { acting--; ansDrawn = ''; if (last) draw(last); UI.toast(e && e.message ? e.message : String(e), true); });
     }
     function setMode(s, n) {
       acting++;
@@ -328,7 +367,7 @@
     function draw(r) {
       last = r; keep('live:' + sid, r);
       var s = r.sitting, now = r.now, open = s.state === 'open';
-      if (!acting) drawMode(s, false);
+      if (!acting) { drawMode(s, false); drawAnswers(s, false); }
       UI.clear(head);
       head.appendChild(el('div', {}, [el('h1', {}, s.title), el('p', { class: 'small' }, s.className + ' · ' + s.minutes + ' minutes · ' +
         (open ? (s.opens > now ? 'starts at ' + UI.dateTime(s.opens) : 'pupils can begin until ' + UI.time(s.beginBy)) : 'closed ' + UI.dateTime(s.closed)))]));
@@ -343,8 +382,9 @@
         });
         acts.appendChild(close);
       }
-      /* the answers are released only after the close: pupils still writing would see them (1_Teacher.gs _sittingRelease_) */
-      if (s.released || s.state !== 'open') {
+      /* the answers are released only after the close: pupils still writing would see them (1_Teacher.gs _sittingRelease_).
+         A run that shows them at hand-in needs no button: every pupil who has handed in sees them already. */
+      if (!s.atHandin && (s.released || s.state !== 'open')) {
         var rel = el('button', { class: 'btn', type: 'button' }, s.released ? 'Hide the answers again' : 'Release the answers');
         rel.addEventListener('click', function () {
           act(rel, s.released ? 'Hiding…' : 'Releasing…', API.call('sitting.release', { sittingId: sid, release: !s.released }),
@@ -473,7 +513,7 @@
     var qbox = el('section', { class: 'panel' }, [
       el('div', { class: 'head' }, [el('h1', {}, 'Question ' + item.number), el('span', { class: 'chip chip--accent' }, UI.plural(item.points, 'mark'))]),
       el('p', { class: 'q__t' }, item.text), item.help ? el('p', { class: 'q__h' }, item.help) : null,
-      item.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + item.image, alt: '', style: 'max-width:100%;max-height:320px' }) : null,
+      item.image ? UI.picture(item.image, { teacher: true, fetch: function (id) { return API.call('quiz.pictureData', { sittingId: item.sittingId, id: id }, { quiet: true }); } }) : null,
       (item.correct && item.correct.length) || item.model ? el('div', { class: 'model' }, [
         item.correct && item.correct.length ? el('div', {}, [el('strong', {}, 'Answer key: '), item.correct.join(' · ')]) : null,
         item.model ? el('div', {}, [el('strong', {}, 'From the form: '), item.model]) : null]) : null]);
@@ -1093,7 +1133,7 @@
       box.appendChild(el('div', { class: 'head' }, [el('div', {}, [el('h1', {}, quiz.title), el('p', { class: 'small' },
         (r.mine ? 'Yours' : 'Shared by ' + meta.owner) + ((meta.sharedWith || []).length && r.mine ? ' · shared with ' + meta.sharedWith.join(', ') : ''))]), acts]));
       if (shareOpen) box.appendChild(sharePanel(quizId, Number(version), quiz.title, meta.sharedWith || [], r.mine, function () { paint(); }));
-      box.appendChild(questionList(quiz));
+      box.appendChild(questionList(quiz, quizId, Number(version)));
     });
   }
   /* Share (Daniel, 11 Nov 2026): "sharing within the department so … all the teachers are available within the system", or
@@ -1147,8 +1187,11 @@
       el('div', { class: 'row' }, [make]), said]));
     return wrap;
   }
-  function questionList(quiz) {
+  function questionList(quiz, quizId, version) {
     var wrap = el('div'), n = 0;
+    /* a saved quiz's pictures can come through Quiz Hall when Google refuses them here (js/ui.js UI.picture); a form still
+       being added has no quiz yet, so its picture only says so */
+    var pics = { teacher: true, fetch: quizId ? function (id) { return API.call('quiz.pictureData', { quizId: quizId, version: version, id: id }, { quiet: true }); } : null };
     quiz.questions.forEach(function (q) {
       if (q.kind === 'section') { wrap.appendChild(el('div', { class: 'section-title' }, q.title || 'Section')); return; }
       var isQ = ['choice', 'checkbox', 'short', 'paragraph'].indexOf(q.kind) >= 0;
@@ -1156,10 +1199,10 @@
       var card = el('div', { class: 'q' }, [
         isQ ? el('div', { class: 'q__n' }, 'Question ' + n + ' · ' + GoogleData.kindLabel(q.kind) + ' · ' + UI.plural(q.points || 0, 'mark') + (q.topic ? ' · ' + q.topic : '') + ' · ' + howMarked(q)) : null,
         q.title ? el('div', { class: 'q__t' }, q.title) : null, q.help ? el('div', { class: 'q__h' }, q.help) : null,
-        q.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + q.image, alt: '' }) : null]);
+        q.image ? UI.picture(q.image, pics) : null]);
       (q.options || []).forEach(function (o) {
         var right = (q.correct || []).indexOf(o.label) >= 0;
-        card.appendChild(el('div', { class: 'opt' + (right ? ' is-on' : '') }, [right ? '✓ ' : '', o.label, o.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + o.image, alt: '' }) : null]));
+        card.appendChild(el('div', { class: 'opt' + (right ? ' is-on' : '') }, [right ? '✓ ' : '', o.label, o.image ? UI.picture(o.image, pics) : null]));
       });
       if (q.kind === 'short' && q.correct && q.correct.length) card.appendChild(el('p', { class: 'small' }, 'Accepted answers: ' + q.correct.join(' · ')));
       wrap.appendChild(card);

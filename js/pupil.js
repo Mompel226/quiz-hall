@@ -211,7 +211,7 @@
     function start() {
     stopHome();
     UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id })).then(function (r) {
-      if (r.handed) return handedIn(r, q.title);
+      if (r.handed) return handedIn(r, q.title, q.id);
       var local = loadLocal(q.id);
       var answers = Object.assign({}, r.answers || {}, local && local.answers ? local.answers : {});
       S = { sid: q.id, quiz: r.quiz, answers: answers, deadline: r.deadline, skew: r.now - Date.now(), locked: !!r.locked,
@@ -249,6 +249,7 @@
   function now() { return Date.now() + (S ? S.skew : 0); }
   function drawQuiz() {
     var app = UI.clear($('app'));
+    var picFetch = S.preview ? previewPics(S.preview) : sittingPics(S.sid);
     document.title = S.quiz.title + ' · Quiz Hall';
     var timer = el('span', { class: 'timer', id: 'qtimer' }), saved = el('span', { class: 'saved', id: 'qsaved' }, '');
     var hand = el('button', { class: 'btn btn--primary', type: 'button' }, 'Hand in');
@@ -267,12 +268,12 @@
       var card = el('div', { class: 'q' }, [
         isQ ? el('div', { class: 'q__n' }, 'Question ' + n + (q.points ? ' · ' + UI.plural(q.points, 'mark') : '')) : null,
         q.title ? el('div', { class: 'q__t' }, q.title) : null, q.help ? el('div', { class: 'q__h' }, q.help) : null,
-        q.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + q.image, alt: '' }) : null]);
+        q.image ? UI.picture(q.image, { fetch: picFetch }) : null]);
       if (q.kind === 'choice' || q.kind === 'checkbox') {
         (q.options || []).forEach(function (o, i) {
           var checked = q.kind === 'choice' ? S.answers[q.id] === i : Array.isArray(S.answers[q.id]) && S.answers[q.id].indexOf(i) >= 0;
           var input = el('input', { type: q.kind === 'choice' ? 'radio' : 'checkbox', name: 'q_' + q.id, checked: checked ? true : null });
-          var row = el('label', { class: 'opt' + (checked ? ' is-on' : '') }, [input, el('span', {}, [o.label, o.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + o.image, alt: '' }) : null])]);
+          var row = el('label', { class: 'opt' + (checked ? ' is-on' : '') }, [input, el('span', {}, [o.label, o.image ? UI.picture(o.image, { fetch: picFetch }) : null])]);
           input.addEventListener('change', function () {
             if (q.kind === 'choice') S.answers[q.id] = i;
             else {
@@ -493,13 +494,13 @@
       app.appendChild(el('section', { class: 'panel' }, [el('h2', {}, 'What a pupil sees when they hand in'),
         el('p', { style: 'font-size:22px;font-weight:700' }, 'Your score: ' + res.score + ' of ' + res.max + (res.toMark ? ' so far' : '')),
         res.toMark ? el('p', {}, 'Your teacher marks ' + UI.plural(res.toMark, 'more answer') + '. Your score can still go up.') : null,
-        el('p', { class: 'small' }, 'You see the right answers when your teacher releases them.')]));
-      app.appendChild(el('h2', { style: 'margin-top:20px' }, 'What a pupil sees after you release the answers'));
-      feedbackQuestions(app, r.questions);
+        el('p', { class: 'small' }, 'Pupils see the right answers straight after they hand in, or when you release them: you choose on Run a quiz.')]));
+      app.appendChild(el('h2', { style: 'margin-top:20px' }, 'What a pupil sees with the right answers'));
+      feedbackQuestions(app, r.questions, previewPics(o));
     }, function (e) { if (S) { S.handing = false; drawQuiz(); watch(); } UI.toast(e && e.message ? e.message : String(e), true); });
   }
-  function handedIn(r, title) {
-    var sid = S && S.sid;
+  function handedIn(r, title, sidAsked) {
+    var sid = (S && S.sid) || sidAsked;
     stopAll(); S = null; leaveFull();
     if (sid) dropLocal(sid);
     var app = UI.clear($('app')), res = r.result;
@@ -508,13 +509,26 @@
       lines.push(el('p', { style: 'font-size:22px;font-weight:700' }, 'Your score: ' + res.score + ' of ' + res.max + (res.toMark ? ' so far' : '')));
       if (res.toMark) lines.push(el('p', {}, 'Your teacher marks ' + UI.plural(res.toMark, 'more answer') + '. Your score can still go up.'));
     } else lines.push(el('p', {}, 'Your answers are in. Your score appears on your first page in a moment.'));
-    lines.push(el('p', { class: 'small' }, 'You see the right answers when your teacher releases them.'));
+    /* the run shows the answers at hand-in (0_Core.gs ANSWERS_AT_HANDIN): they came with this answer, drawn at once */
+    var fb = r.feedback && r.feedback.released ? r.feedback : null;
+    if (fb) lines.push(el('p', {}, 'Below are the right answers. Look at each question: your answer, the right answer and the feedback.'));
+    else if (!r.queued) lines.push(el('p', { class: 'small' }, 'You see the right answers when your teacher releases them.'));
     if (r.writtenUntil) lines.push(el('p', { class: 'small' }, 'Your written answers are kept until ' + r.writtenUntil + '. On 1 August they are deleted. Your marks are kept.'));
     lines.push(el('button', { class: 'btn', type: 'button', onclick: refresh }, 'Back to your quizzes'));
     app.appendChild(el('section', { class: 'panel' }, lines));
+    if (fb) {
+      app.appendChild(el('h2', { style: 'margin-top:20px' }, 'The right answers'));
+      feedbackQuestions(app, fb.questions, sittingPics(sid));
+      app.appendChild(el('div', { class: 'row' }, el('button', { class: 'btn', type: 'button', onclick: refresh }, 'Back to your quizzes')));
+    }
   }
 
-  /* ── after release: the right answers and the teacher's comments ── */
+  /* a picture Google refuses to this browser comes through Quiz Hall (js/ui.js UI.picture): the pupil's own run, or the
+     teacher's Try it */
+  function sittingPics(sid) { return function (id) { return API.call('sit.picture', { sittingId: sid, id: id }, { quiet: true }); }; }
+  function previewPics(o) { return function (id) { return API.call('quiz.pictureData', { quizId: o.quizId, version: o.version, id: id }, { quiet: true }); }; }
+
+  /* ── after release (or at hand-in): the right answers and the teacher's comments ── */
   function feedback(sid, btn) {
     UI.act(btn, 'Opening…', API.call('sit.feedback', { sittingId: sid })).then(function (r) {
       stopHome();
@@ -524,11 +538,11 @@
       app.appendChild(el('h1', {}, r.title));
       app.appendChild(el('p', { style: 'font-size:20px;font-weight:700' }, 'Your score: ' + r.result.score + ' of ' + r.result.max + (r.result.toMark ? ' so far' : '')));
       app.appendChild(el('p', { class: 'small' }, 'Your written answers are kept until ' + r.writtenUntil + '. On 1 August they are deleted. Your marks are kept.'));
-      feedbackQuestions(app, r.questions);
+      feedbackQuestions(app, r.questions, sittingPics(sid));
     }, noop);
   }
   /* each question after release: the pupil's answer, the right answer, the form's feedback, the teacher's comment */
-  function feedbackQuestions(app, questions) {
+  function feedbackQuestions(app, questions, fetchPic) {
       questions.forEach(function (q, i) {
         var mine = q.answer, shown;
         if (q.kind === 'choice' || q.kind === 'checkbox') {
@@ -538,7 +552,7 @@
         app.appendChild(el('div', { class: 'q' }, [
           el('div', { class: 'q__n' }, 'Question ' + (i + 1) + ' · ' + (q.pending ? 'not marked yet' : (q.mark === null ? '' : q.mark + ' of ' + q.points))),
           el('div', { class: 'q__t' }, q.title),
-          q.image ? el('img', { src: 'https://lh3.googleusercontent.com/d/' + q.image, alt: '' }) : null,
+          q.image ? UI.picture(q.image, { fetch: fetchPic }) : null,
           el('p', {}, [el('strong', {}, 'Your answer: '), shown]),
           q.correct && q.correct.length ? el('p', {}, [el('strong', {}, 'Right answer: '), q.correct.join(' · ')]) : null,
           q.feedback ? el('p', { class: 'q__h' }, q.feedback) : null,

@@ -189,6 +189,9 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; }
 .opt input { margin-top: 4px; }
 .opt.is-on { border-color: var(--accent); background: var(--accent-soft); }
 .opt img { max-width: 220px; margin: 4px 0 0; }
+.qpic { display: block; }
+.qpic__miss { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--card); color: var(--ink-2); font-size: 14px; line-height: 1.4; }
+.qpic__miss strong { color: var(--ink); }
 .section-title { font-size: 18px; font-weight: 700; margin: 24px 0 10px; }
 .overlay { position: fixed; inset: 0; z-index: 40; background: rgba(15, 22, 29, .72); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .overlay__box { background: var(--card); color: var(--ink); border-radius: 10px; max-width: 520px; width: 100%; padding: 24px; text-align: center; }

@@ -16,7 +16,8 @@ Open it at <https://nlcsbiology.com/quiz-hall/>.
    Run, Share and Move to the bin. **Share** with colleagues or a department in Quiz Hall, or as a new Google Form in your
    own Drive for a teacher who does not use Quiz Hall.
 5. **Run it** for a class: choose the length and the test mode (as in the Test System: Track + warn, Block actions,
-   Auto-lock, Require full screen), and press Start now. Pupils signed in on nlcsbiology.com see a Quiz card on its
+   Auto-lock, Require full screen) and when pupils see the right answers (as soon as they hand in, or when you release
+   them), and press Start now. Pupils signed in on nlcsbiology.com see a Quiz card on its
    front page within a few seconds, or they open this website (Copy the link for pupils, to paste into Google Classroom),
    on a laptop in Chrome, with their school account.
 6. **The quiz locks** if a pupil leaves the page (unless you turned Auto-lock or Track + warn off); you unlock them on the live page.
@@ -38,8 +39,9 @@ Something wrong, or a suggestion? Please contact me: dmompelriera@nlcsjeju.kr
 
 The website is plain HTML, CSS and JavaScript. It keeps nothing about pupils itself: every request goes to Quiz Hall's
 back office, a Google Apps Script with its own spreadsheet, which checks each request again. Teachers read their own
-Google Classroom and Google Forms in their own browser, with their own permission. The answer key never reaches a
-pupil's page.
+Google Classroom and Google Forms in their own browser, with their own permission. The answer key reaches a pupil's
+page only after their own hand-in, when their teacher lets them see the answers. Quiz pictures are kept in Drive and
+shared with the school; when a browser cannot load one from Google, Quiz Hall sends the same picture itself.
 
 Licences: the software is under the GNU Affero General Public License v3.0 (`LICENSE`); see `NOTICE`.
 </details>

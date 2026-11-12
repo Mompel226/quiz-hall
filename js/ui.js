@@ -79,6 +79,57 @@
     return m ? m + ' min ' + (s ? s + ' s' : '') : s + ' s';
   };
   UI.pct = function (a, b) { return b ? Math.round(100 * a / b) : null; };
+  /* ── A quiz picture (12 Nov 2026: one pupil's laptop showed none of a quiz's pictures while the class saw them). The
+     browser loads Google's link first (the Drive file, shared with the school). Google refuses it to a Chrome whose first
+     account is personal, an Incognito window, third-party cookies blocked or an ad blocker; then the page asks Quiz Hall
+     for the same picture (`o.fetch(id)` → {type, data}: 2_Pupil.gs _sitPicture_, 1_Teacher.gs _teacherPicture_), one at a
+     time so a whole class never floods it, and keeps it for this page load. Once one picture has needed Quiz Hall, the
+     next go to Quiz Hall at once. Only when that fails too does the picture's place say so, with Try again: the pupil
+     sees no message while the picture can still be shown. o.teacher: the teacher's words. ── */
+  var picKept = {}, picAsked = {}, picQueue = [], picBusy = false, googleRefused = false;
+  function picPump() {
+    if (picBusy || !picQueue.length) return;
+    var job = picQueue.shift(); picBusy = true;
+    var done = function () { picBusy = false; picPump(); };
+    Promise.resolve().then(function () { return job.fetch(job.id); }).then(function (r) {
+      if (!r || !r.data) throw new Error('no picture');
+      picKept[job.id] = 'data:' + (r.type || 'image/png') + ';base64,' + r.data;
+      job.ok(picKept[job.id]); done();
+    }, function (e) { delete picAsked[job.id]; job.no(e); done(); });
+  }
+  function picFromQuizHall(id, fetch) {
+    if (picKept[id]) return Promise.resolve(picKept[id]);
+    if (!picAsked[id]) picAsked[id] = new Promise(function (ok, no) { picQueue.push({ id: id, fetch: fetch, ok: ok, no: no }); picPump(); });
+    return picAsked[id];
+  }
+  UI.picture = function (id, o) {
+    o = o || {};
+    var box = UI.el('span', { class: 'qpic' }), img = UI.el('img', { alt: '' });
+    function missing() {
+      UI.clear(box);
+      var again = UI.el('button', { class: 'btn btn--small', type: 'button' }, 'Try again');
+      again.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); start(true); });   /* inside an answer's label: never ticks it */
+      box.appendChild(UI.el('span', { class: 'qpic__miss', role: 'status' }, [UI.el('strong', {}, 'This picture did not load.'),
+        UI.el('span', {}, o.teacher ? 'Check that you are online, then press Try again.' : 'Check that your laptop is online, then press Try again. If it still does not show, tell your teacher.'), again]));
+    }
+    function viaQuizHall() {
+      if (!o.fetch) return missing();
+      picFromQuizHall(id, o.fetch).then(function (url) { img.src = url; }, missing);
+    }
+    img.addEventListener('error', function () {
+      if (/^data:/.test(img.getAttribute('src') || '')) return missing();
+      googleRefused = true; viaQuizHall();
+    });
+    function start(again) {
+      UI.clear(box); box.appendChild(img);
+      if (picKept[id]) img.src = picKept[id];
+      else if (o.fetch && (googleRefused || again)) viaQuizHall();
+      else img.src = 'https://lh3.googleusercontent.com/d/' + id + (again ? '?again=' + Date.now() : '');
+    }
+    start(false);
+    return box;
+  };
+
   UI.plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); };
 
   /* a file to download, made on the page (a spreadsheet file the teacher opens in Excel or Sheets) */

@@ -9,7 +9,7 @@
   'use strict';
   var H = global.Help = {};
   var el = UI.el;
-  var V = '5';                      /* raise when the pictures in assets/help/ are taken again */
+  var V = '7';                      /* raise when the pictures in assets/help/ are taken again */
 
   /* "Press **Start now** (6)." → text, bold names, and (n) drawn like the pin it points to */
   function rich(s) {
@@ -110,7 +110,7 @@
       ['Run it', '**Run a quiz**: the quiz, the class, the length and the test mode, then **Start now**.', 'h-run'],
       ['Watch it live', 'The live page opens by itself: who is writing, who is locked, who has handed in.', 'h-live'],
       ['Mark the written answers', '**To mark**: one question at a time for the whole class, one key press per mark.', 'h-mark'],
-      ['Release the answers, then look at the results', '**Release the answers** on the live page once the quiz is closed. **Results**: the class, each question, each topic, each pupil.', 'h-results']
+      ['Look at the results', 'Pupils see the right answers as soon as they hand in, unless you chose **When I release them**: then press **Release the answers** on the live page once the quiz is closed. **Results**: the class, each question, each topic, each pupil.', 'h-results']
     ];
     var ol = el('ol', { class: 'hsteps' });
     steps.forEach(function (s) {
@@ -128,8 +128,8 @@
       ['p-home', 'Their quizzes', 'Your quiz with your name, the class, the number of questions and the time. The blue box says what to do before **Begin** (switch off Grammarly and any AI extension; on a Mac, one setting in Chrome) and what makes the quiz lock. It follows your test mode: in open book it says that nothing is watched.', 'A pupil\'s first page in Quiz Hall: the quiz, the blue box and Begin'],
       ['p-quiz', 'The quiz', 'The time left and the last save stay at the top, with **Hand in**. Each answer is kept on the pupil\'s computer at once and sent to Quiz Hall about every 90 seconds, so a dropped connection loses nothing.', 'The quiz page: the time left, Saved, Full screen and Hand in above the questions'],
       ['p-lock', 'Locked', 'If the pupil leaves the quiz page (another tab or window, Shift and Command together, 15 seconds offline), the quiz locks and the live page shows it. Their answers are kept. When you press **Unlock**, their quiz opens again within a few seconds.', 'The quiz page behind a box: Your quiz is locked'],
-      ['p-handed', 'Handed in', 'Their score comes at once. If some answers are yours to mark, it says "so far" and that the score can still go up.', 'Handed in: Your score: 5 of 5'],
-      ['p-answers', 'After you release the answers', 'Each pupil sees every question, their answer, the right answer and your comment. Until you press **Release the answers**, they see only their score.', 'A pupil\'s answers page: each question with their answer and the right answer']
+      ['p-handed', 'Handed in', 'Their score comes at once, and below it every question with their answer, the right answer and the form\'s feedback. If some answers are yours to mark, it says "so far" and that the score can still go up. If you chose **When I release them**, they see only the score.', 'Handed in: Your score, then the right answers'],
+      ['p-answers', 'Their answers later', 'From their first page, **See your answers** opens the same page again, with your comments once you have marked. If you chose **When I release them**, it opens only after you press **Release the answers**.', 'A pupil\'s answers page: each question with their answer, the right answer and the teacher\'s comment']
     ];
     var fl = el('ol', { class: 'pflow' });
     flow.forEach(function (f) {
@@ -235,27 +235,29 @@
       list(['(1) The quiz, (2) the class, (3) the length in minutes.',
             '(4) **Start**: **Now**, or **At a time I choose**: until then pupils see it as "soon", with no way in.',
             '(5) **Test mode**: the Test System\'s four switches. **Track + warn** watches leaving the page, Shift + Command and going offline, and warns the pupil; off, it is open book. **Block actions** stops copy, paste and right-click. **Auto-lock** locks a pupil who leaves the page until you unlock them; off, leaving is only recorded for you. **Require full screen** opens the quiz in full screen and waits while a pupil is out of it.',
-            '(6) **Start now**: the live page opens.',
-            '(7) **Copy the link for pupils**, to paste into Google Classroom.']),
+            '(6) **When pupils see the right answers**: **As soon as they hand in**, or **When I release them** (the card after To mark).',
+            '(7) **Start now**: the live page opens.',
+            '(8) **Copy the link for pupils**, to paste into Google Classroom.']),
       example(['An end-of-topic test: all four switches on.',
                'A quick check in class, where looking at notes does not matter: Track + warn off (open book).',
                'A class with weak Wi-Fi: Auto-lock off. Nobody is locked; you still see who left the page.']),
-      p('This computer remembers your last test mode for the next quiz.', 'small')
-    ], pic('t-run', 'Run a quiz: the quiz, the class, the length, the start, the four test mode switches, Start now and Copy the link for pupils')));
+      p('This computer remembers your last test mode for the next quiz. When pupils see the answers starts at As soon as they hand in each time.', 'small')
+    ], pic('t-run', 'Run a quiz: the quiz, the class, the length, the start, the four test mode switches, when pupils see the right answers, Start now and Copy the link for pupils')));
 
     box.appendChild(card('h-live', 'The live page', 'Opens after Start now · later: Today ▸ Running now ▸ Open live page', [
       p('It checks every few seconds. Each row is a pupil: **Writing**, **Locked** (with the reason, for example "left the page"), **Not begun** or **Handed in**, with their time left, score and number of locks.'),
       list(['(1) **Test mode** can change while the quiz runs. Pupils\' pages take the change at their next save, within two minutes.',
-            '(2) How many have handed in, are writing, are locked and have not begun.',
-            '(3) **Unlock** opens a locked pupil\'s quiz again. They have 45 seconds in which leaving does not lock again.',
-            '(4) **+5 min**: five more minutes for that pupil.',
-            '(5) **Close now** ends the quiz; the saved answers of pupils still writing are handed in.',
-            '(6) **Copy the link for pupils**.']),
+            '(2) **When pupils see the right answers** can change at any time, also after the quiz is closed.',
+            '(3) How many have handed in, are writing, are locked and have not begun.',
+            '(4) **Unlock** opens a locked pupil\'s quiz again. They have 45 seconds in which leaving does not lock again.',
+            '(5) **+5 min**: five more minutes for that pupil.',
+            '(6) **Close now** ends the quiz; the saved answers of pupils still writing are handed in.',
+            '(7) **Copy the link for pupils**.']),
       p('Once the quiz is closed, **Remove these results** is here too: the way to remove a run that nobody sat, which Results does not show.', 'small')
-    ], pic('t-live', 'The live page: the test mode, the counts, and each pupil with Unlock and +5 min')));
+    ], pic('t-live', 'The live page: the test mode, when pupils see the right answers, the counts, and each pupil with Unlock and +5 min')));
 
     /* ── after the quiz ── */
-    box = section(app, 'after', 'h-s-after', 'After the quiz', 'Marking, releasing the answers, and the results.');
+    box = section(app, 'after', 'h-s-after', 'After the quiz', 'Marking, the right answers, and the results.');
     box.appendChild(card('h-mark', 'Mark the written answers', 'To mark (the number beside it is how many wait)', [
       p('**To mark** lists each question with answers waiting: paragraphs, and short answers close to the key. Press **Mark**.'),
       list(['The model answer from your form is at the top.',
@@ -264,10 +266,15 @@
       p('Each mark is saved as you give it. The pupils\' scores and Results follow.')
     ], pic('t-mark', 'Marking one question: the model answer, then each different answer with the pupils who wrote it, the marks and a comment')));
 
-    box.appendChild(card('h-release', 'Release the answers', 'The live page, once the quiz is closed', [
-      p('**Release the answers** lets each pupil see every question, their answer, the right answer and your comments (step 6 of what pupils see). **Hide the answers again** undoes it.'),
-      lock('Only after the quiz is closed, so that pupils still writing never see the answers.')
-    ]));
+    box.appendChild(card('h-release', 'When pupils see the right answers', 'Run a quiz, and the live page (open or closed)', [
+      p('You choose for each quiz you run, and you can change it on the live page at any time:'),
+      list(['(1) **As soon as they hand in** (chosen at the start): each pupil sees every question, their answer, the right answer and the form\'s feedback straight after handing in (steps 5 and 6 of what pupils see). An answer you mark yourself says "not marked yet" until you mark it; your comments appear as you write them.',
+            '(2) **When I release them**: pupils see only their score. (3) Once the quiz is closed, press **Release the answers**. **Hide the answers again** undoes it.']),
+      example(['Pupils go through their answers with a pen straight after the quiz: As soon as they hand in.',
+               'Written answers to mark first, or the whole class sees the answers at the same time: When I release them.',
+               'A test in which pupils who finish early could show the answers to pupils still writing: When I release them.']),
+      lock('A pupil sees the answers only after their own hand-in. Release the answers works only after the quiz is closed.')
+    ], pic('t-answers', 'The live page of a closed quiz: When pupils see the right answers, with Release the answers')));
 
     box.appendChild(card('h-results', 'Results', 'Results ▸ choose the class', [
       views([
@@ -307,11 +314,14 @@
     [['A pupil says no quiz is showing', ['Check, in this order: they are signed in with their school account, not a personal Gmail; they are on the class list (My classes ▸ the class); the quiz has started (Today ▸ Running now); the time to begin has not passed (the live page says until when).', 'Their page checks every ten seconds or so; a reload checks at once.']],
      ['A pupil is locked again and again', ['Usually Grammarly or another extension, or a Mac showing its toolbar in full screen: the two steps in the blue box before Begin.', 'For that quiz, turn **Auto-lock** off on the live page. Leaving the page is still recorded for you.']],
      ['A pupil\'s internet dropped', ['Their answers are kept on their computer and sent when the connection comes back. After 15 seconds offline the quiz locks (with Auto-lock on): unlock them when they are back online.']],
+     ['A picture says "This picture did not load"', ['Each picture is kept in Drive and shared with everyone at the school. When a pupil\'s Chrome cannot load it from Google (a personal Google account first in Chrome, an Incognito window, third-party cookies blocked, an ad blocker), Quiz Hall sends the same picture itself, so the pupil sees it with nothing to do.',
+       'Only when Quiz Hall cannot send it either does the picture\'s place say so, with **Try again**: usually the pupil\'s laptop is offline. If it still says so, the picture is no longer in the Drive folder "Quiz Hall pictures (do not move or delete)": add the form again (My quizzes ▸ Add a quiz from a Google Form). The pupil\'s answers are kept.'],
+       ['p-picture', 'A question whose picture did not load: This picture did not load, with Try again'], 'h-pictures'],
      ['A pupil is on a phone, an iPad or Safari', ['Quiz Hall does not open a quiz there: pupils need Google Chrome on a laptop or a Chromebook.']],
      ['The form will not come in', ['Copy the address of the form\'s editing page (…/forms/d/…/edit), not the pupils\' link (…/forms/d/e/…). You must be able to edit the form.']],
      ['A colleague\'s quiz is not in My quizzes', ['Ask them to open the quiz ▸ **Share** ▸ With colleagues in Quiz Hall, and type your address or your department.']],
      ['Make a Google Form does not work', ['Google asks once to let Quiz Hall make files in your Drive: tick that box. If Google says the app is not allowed, the school\'s Google admin must allow Quiz Hall to use Google Drive.']]
-    ].forEach(function (q, i) { box.appendChild(card('h-p' + i, q[0], '', q[1].map(function (s) { return p(s); }))); });
+    ].forEach(function (q, i) { box.appendChild(card(q[3] || ('h-p' + i), q[0], '', q[1].map(function (s) { return p(s); }), q[2] ? pic(q[2][0], q[2][1]) : undefined)); });
 
     /* ── rarely needed ── */
     box = section(app, 'know', 'h-s-know', 'Good to know', 'Rarely needed.');
