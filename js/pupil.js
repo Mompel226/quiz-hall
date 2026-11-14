@@ -8,6 +8,25 @@
   var el = UI.el, $ = UI.$;
   var S = null;            /* the quiz being sat */
 
+  /* A reload of this tab during a quiz goes straight back into it, unlocked; any other way back locks, because the pupil
+     closed the quiz page or left it (the back office's _begin_, Quiz Hall v1.9). The page sitting the quiz leaves a note
+     in this tab's own storage as it goes (pagehide); the next page keeps it only when the browser says it is a reload and
+     the note is under 15 seconds old. Back and Forward, the hub's card, a new tab or another laptop bring no note. */
+  var RELOAD_KEY = 'quizhall.reload';
+  P.reloadOf = (function () {
+    var note = null, nav = null;
+    try { note = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null'); sessionStorage.removeItem(RELOAD_KEY); } catch (e) { note = null; }
+    try { nav = performance.getEntriesByType('navigation')[0]; } catch (e) { nav = null; }
+    return note && note.sid && nav && nav.type === 'reload' && Date.now() - note.at < 15000 ? note : null;
+  })();
+  global.addEventListener('pagehide', function () {
+    var sid = S ? (S.handing || S.preview ? '' : S.sid) : P.begunSid;
+    if (!sid) return;
+    try { sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ sid: sid, at: Date.now(), email: (global.SignIn && SignIn.who() || {}).email || '' })); } catch (e) {}
+  });
+  /* a page the browser kept and shows again (Back, then Forward) was never reloaded: its own watchers lock it */
+  global.addEventListener('pageshow', function (e) { if (e.persisted) { try { sessionStorage.removeItem(RELOAD_KEY); } catch (x) {} } });
+
   /* the browser, as the Test System reads it (TestForm.html _detectBrowser_, copied: Chrome on a laptop only) */
   P.detectBrowser = function () {
     var ua = navigator.userAgent || '', uaData = navigator.userAgentData;
@@ -87,9 +106,11 @@
       app.appendChild(el('section', { class: 'panel' }, [el('p', {}, 'No quiz is open for you now.'),
         el('button', { class: 'btn', type: 'button', onclick: refresh }, 'Check again')]));
     }
+    var back = null, me = global.SignIn && SignIn.who();
     open.forEach(function (q) {
       var go = el('button', { class: 'btn btn--primary', type: 'button', disabled: q.state === 'soon' ? true : null }, q.state === 'writing' || q.state === 'locked' ? 'Continue' : 'Begin');
       go.addEventListener('click', function () { begin(q, go); });
+      if (P.reloadOf && P.reloadOf.sid === q.id && (q.state === 'writing' || q.state === 'locked') && (!P.reloadOf.email || (me && me.email === P.reloadOf.email))) back = [q, go];
       app.appendChild(el('section', { class: 'panel' }, [
         el('h2', {}, q.title),
         el('p', { class: 'small' }, q.teacher + ' · ' + q.className + ' · ' + UI.plural(q.questions, 'question') + ' · ' + q.minutes + ' minutes' +
@@ -109,6 +130,7 @@
       app.appendChild(el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' }, [el('thead', {}, el('tr', {}, [el('th', {}, 'Quiz'), el('th', { class: 'num' }, 'Score'), el('th', {}, '')])), tb])));
     }
     watchHome(open);
+    if (back) begin(back[0], back[1], true);       /* this tab was reloaded during the quiz: straight back in (after watchHome: Begin stops it) */
   }
   /* A quiz started after this page was drawn shows within seconds (Daniel, 10 Nov 2026: "it needs to be almost instant"):
      pupil.now, a light check that writes nothing, every 10 seconds while this page is in front (every 30 after a quarter of
@@ -201,28 +223,33 @@
       done ? 'Nothing was saved. ' : 'Nothing is saved. The quiz locks as it would for a pupil; here you unlock it yourself. ',
       !done && b.kind !== 'chrome' ? 'Pupils must use Chrome on a laptop. ' : '', el('a', { href: o.back }, done ? 'Back to the quiz' : 'End the preview')]);
   }
-  function begin(q, btn) {
+  function begin(q, btn, auto) {
     var m = modeOf(q.mode);
-    if (m.track && m.full && !isFull()) {          /* asked in this click, as the Test System's Begin does */
+    if (!auto && m.track && m.full && !isFull()) { /* asked in this click, as the Test System's Begin does (after a reload, the quiz waits behind Return to full screen) */
       goFull().then(function (ok) { if (ok) start(); else UI.toast('Your teacher asks for full screen. Allow full screen, then press Begin again.', true); });
       return;
     }
     start();
     function start() {
     stopHome();
-    UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id })).then(function (r) {
+    /* reload: this tab was reloaded during the quiz, under a minute ago; again: this page asked before and the answer never came */
+    var reload = !!(P.reloadOf && P.reloadOf.sid === q.id && Date.now() - P.reloadOf.at < 60000), again = P.begunSid === q.id && !!P.beginMissed;
+    P.reloadOf = null; P.begunSid = q.id;
+    UI.act(btn, 'Opening…', API.call('sit.begin', { sittingId: q.id, reload: reload, again: again })).then(function (r) {
+      P.beginMissed = false;
       if (r.handed) return handedIn(r, q.title, q.id);
       var local = loadLocal(q.id);
       var answers = Object.assign({}, r.answers || {}, local && local.answers ? local.answers : {});
       S = { sid: q.id, quiz: r.quiz, answers: answers, deadline: r.deadline, skew: r.now - Date.now(), locked: !!r.locked,
             reasonText: r.reasonText, graceUntil: 0, dirty: true, lastSent: 0, rightClicks: 0, writtenUntil: r.writtenUntil, hasWritten: r.hasWritten,
-            mode: modeOf(r.mode || q.mode) };
+            mode: modeOf(r.mode || q.mode), reason: r.reason || '' };
       drawQuiz();
       watch();
       checkFull();
       if (S.locked) showLock();
+      else if (r.recorded) UI.toast((TOLD[r.recorded] || '') + ' Your teacher is told.', true);
       sendSoon(2000);
-    }, function () { if (!S) watchHome(homeOpen); });                      /* Begin failed: still on the first page */
+    }, function () { P.beginMissed = true; if (!S) watchHome(homeOpen); });   /* Begin failed: still on the first page */
     }
   }
   /* a new mode from the back office: the watchers, the Open book mark and the full-screen wait follow it */
@@ -325,7 +352,7 @@
       if (r.now) S.skew = r.now - Date.now();
       var s = $('qsaved'); if (s) s.textContent = '✓ Saved ' + UI.time(r.now);
       applyMode(r.mode);
-      if (r.locked && !S.locked) { S.locked = true; S.reasonText = r.reasonText; showLock(); }
+      if (r.locked && !S.locked) { S.locked = true; S.reason = r.reason || ''; S.reasonText = r.reasonText; showLock(); }
       sendSoon();
     }, function () { S.dirty = true; var s = $('qsaved'); if (s) s.textContent = 'Kept on this computer (not sent yet)'; sendSoon(15000); });
   }
@@ -335,7 +362,7 @@
      cannot arrive until the connection is back), and only then does the page ask whether the teacher has unlocked it. */
   var TOLD = { tab_switch: 'You left the quiz page.', long_away: 'You left the quiz page.', focus_lost: 'You left the quiz window.',
                shift_command: 'You pressed Shift and Command.', shortcut: 'You pressed a screenshot key.', offline: 'You were offline for 15 seconds.',
-               right_click: 'You right-clicked five times.' };
+               right_click: 'You right-clicked five times.', reopened: 'You closed the quiz page, or left it.' };
   function event(kind) {
     if (!S || S.locked || S.handing || Date.now() < S.graceUntil || !S.mode.track) return;
     if (!S.mode.lock) {                            /* record only: the teacher is told, the pupil warned, nothing locks */
@@ -344,7 +371,7 @@
       if (!S.preview) API.call('sit.event', { sittingId: S.sid, kind: kind }, { quiet: true, noRetry: true }).then(function (r) { applyMode(r.mode); }, function () {});
       return;
     }
-    S.locked = true; S.reasonText = S.preview ? (S.reasons[kind] || '') : ''; S.pendingEvent = S.preview ? null : kind;
+    S.locked = true; S.reason = kind; S.reasonText = S.preview ? (S.reasons[kind] || '') : ''; S.pendingEvent = S.preview ? null : kind;
     showLock();
     if (!S.preview) sendEvent();
   }
@@ -356,7 +383,7 @@
       S.pendingEvent = null;
       applyMode(r.mode);
       if (!r.locked) { S.locked = false; hideLock(); return; }          /* the 45 seconds after an unlock, open book, record only */
-      S.reasonText = r.reasonText; showLock();
+      S.reason = r.reason || S.reason; S.reasonText = r.reasonText; showLock();
     }, function () { /* kept: the next poll sends it again */ });
   }
   function showLock() {
@@ -364,18 +391,19 @@
     var o = $('lockOverlay');
     if (!o) {
       o = el('div', { class: 'overlay', id: 'lockOverlay', role: 'alertdialog', 'aria-modal': 'true' }, el('div', { class: 'overlay__box' }, [
-        el('h2', {}, 'Your quiz is locked'), el('p', { id: 'lockWhy' }, ''), el('p', {}, 'Ask your teacher to unlock it. Your answers are kept.'),
+        el('h2', {}, 'Your quiz is locked'), el('p', { id: 'lockWhy' }, ''), el('p', { id: 'lockTip', hidden: true }, ''), el('p', {}, 'Ask your teacher to unlock it. Your answers are kept.'),
         el('p', { class: 'small muted' }, 'This page checks every few seconds.')]));
       document.body.appendChild(o);
     }
     $('lockWhy').textContent = S && S.reasonText ? S.reasonText : '';
+    macTip();
     clearInterval(P.lockPoll);
     P.lockPoll = setInterval(function () {
       if (!S) return;
       if (S.pendingEvent) { sendEvent(); return; }
       API.call('sit.status', { sittingId: S.sid }, { quiet: true }).then(function (r) {
         if (r.handed) return handedIn(r, S.quiz.title);
-        if (r.reasonText) { S.reasonText = r.reasonText; $('lockWhy').textContent = r.reasonText; }
+        if (r.reasonText) { S.reasonText = r.reasonText; S.reason = r.reason || S.reason; $('lockWhy').textContent = r.reasonText; macTip(); }
         if (r.deadline) S.deadline = r.deadline;
         if (!r.locked) { S.locked = false; S.graceUntil = Date.now() + 45000; hideLock(); UI.toast('Your teacher unlocked your quiz.'); }
         applyMode(r.mode);
@@ -383,20 +411,31 @@
     }, 7000);
   }
   function hideLock() { clearInterval(P.lockPoll); var o = $('lockOverlay'); if (o) o.remove(); }
+  /* locked for leaving the page on a Mac: the likely slip, a swipe while scrolling (a colleague's pupil, 14 Nov 2026) */
+  var MAC_TIP = 'On a Mac, moving three fingers up the trackpad shows all your windows, and that leaves the quiz page. Scroll with two fingers.';
+  function macTip() {
+    var t = $('lockTip'); if (!t) return;
+    var show = !!(S && isMac() && (S.reason === 'tab_switch' || S.reason === 'long_away'));
+    t.textContent = show ? MAC_TIP : ''; t.hidden = !show;
+  }
   function showPreviewLock() {
     if ($('lockOverlay')) return;
     var un = el('button', { class: 'btn btn--primary', type: 'button' }, 'Unlock (preview)');
     un.addEventListener('click', function () { if (!S) return; S.locked = false; S.graceUntil = Date.now() + 45000; hideLock(); });
     document.body.appendChild(el('div', { class: 'overlay', id: 'lockOverlay', role: 'alertdialog', 'aria-modal': 'true' }, el('div', { class: 'overlay__box' }, [
-      el('h2', {}, 'Your quiz is locked'), el('p', { id: 'lockWhy' }, S.reasonText || ''), el('p', {}, 'Ask your teacher to unlock it. Your answers are kept.'),
+      el('h2', {}, 'Your quiz is locked'), el('p', { id: 'lockWhy' }, S.reasonText || ''), el('p', { id: 'lockTip', hidden: true }, ''), el('p', {}, 'Ask your teacher to unlock it. Your answers are kept.'),
       el('p', { class: 'small muted' }, 'This is what a pupil sees. In a real quiz they wait until you press Unlock on the live page.'),
       el('div', { class: 'row', style: 'justify-content:center' }, un)])));
+    macTip();
   }
 
   var watchers = [];
   function on(target, type, fn, cap) { target.addEventListener(type, fn, cap); watchers.push([target, type, fn, cap]); }
   function watch() {
     stopWatch();
+    /* no sideways two-finger swipe (Chrome's Back and Forward) while the quiz is open: a fast scroll on a trackpad can set
+       it off and take the pupil out of the quiz (css: html.qh-sitting) */
+    document.documentElement.classList.add('qh-sitting');
     var blurAt = 0, offlineAt = 0;
     /* an absence that began within 1.5 s of full screen starting or ending, and lasted under 3 s, is the Mac moving the
        window to or from its full-screen space, not the pupil leaving */
@@ -424,6 +463,7 @@
     on(document, 'visibilitychange', function () { if (document.hidden) { if (!blurAt) blurAt = Date.now(); } else if (blurAt) { var a = Date.now() - blurAt; blurAt = 0; away(a); } });
     on(window, 'blur', function () { if (!blurAt) blurAt = Date.now(); });
     on(window, 'focus', function () { if (blurAt) { var a = Date.now() - blurAt; blurAt = 0; away(a); } });
+    if (document.hidden) blurAt = Date.now();      /* back in after a reload while another tab was in front: away from the start */
     on(window, 'offline', function () { if (!offlineAt) offlineAt = Date.now(); });
     on(window, 'online', function () { offlineAt = 0; if (S && S.pendingEvent) sendEvent(); });
     /* Shift + Command (a Mac's screenshot keys): Command and Shift held together, ending with no other key the page saw */
@@ -441,7 +481,7 @@
     on(document, 'mousemove', sync, true);
     on(window, 'blur', function () { if (armed) ended(); });
   }
-  function stopWatch() { watchers.forEach(function (w) { w[0].removeEventListener(w[1], w[2], w[3]); }); watchers = []; clearInterval(P.offlineTimer); }
+  function stopWatch() { watchers.forEach(function (w) { w[0].removeEventListener(w[1], w[2], w[3]); }); watchers = []; clearInterval(P.offlineTimer); document.documentElement.classList.remove('qh-sitting'); }
   P.stop = function () { stopAll(); S = null; leaveFull(); };
   function stopAll() {
     stopWatch(); clearTimeout(P.sendTimer); clearInterval(P.lockPoll); clearTimeout(P.homeTimer); hideLock(); var f = $('fsOverlay'); if (f) f.remove();
@@ -501,6 +541,7 @@
   }
   function handedIn(r, title, sidAsked) {
     var sid = (S && S.sid) || sidAsked;
+    P.begunSid = null;
     stopAll(); S = null; leaveFull();
     if (sid) dropLocal(sid);
     var app = UI.clear($('app')), res = r.result;

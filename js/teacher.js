@@ -325,7 +325,7 @@
   function stopLive() { if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; } }
   var STATUS = { waiting: ['Not begun', ''], writing: ['Writing', 'chip--accent'], locked: ['Locked', 'chip--bad'], handed: ['Handed in', 'chip--good'] };
   var REASON = { tab_switch: 'left the page', long_away: 'left the page for a long time', shift_command: 'Shift + Command', shortcut: 'screenshot key',
-                 offline: 'offline 15 s', right_click: 'right-clicks', focus_lost: 'left the window' };
+                 offline: 'offline 15 s', right_click: 'right-clicks', focus_lost: 'left the window', reopened: 'closed or left the page' };
   function live(sid) {
     var app = page('Live', 'home', ['#home', 'Today']);
     var head = el('div', { class: 'head' }), modeWrap = el('div'), ansWrap = el('div'), top = el('div'), body = el('div', { class: 'tblwrap' }, el('p', { class: 'empty' }, 'Loading…'));

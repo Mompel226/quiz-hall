@@ -392,3 +392,6 @@ button.group__head:focus-visible { outline: 2px solid var(--accent); outline-off
 .share__chips { gap: 6px; }
 .chip--x { border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 14px; padding: 5px 12px; }
 .chip--x:hover, .chip--x:focus-visible { border-color: var(--bad); color: var(--bad); }
+
+/* a quiz being sat: no sideways two-finger swipe (Chrome's Back and Forward), which a fast scroll can set off (js/pupil.js watch) */
+html.qh-sitting, html.qh-sitting body { overscroll-behavior-x: none; }

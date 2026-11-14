@@ -20,7 +20,7 @@ Open it at <https://nlcsbiology.com/quiz-hall/>.
    them), and press Start now. Pupils signed in on nlcsbiology.com see a Quiz card on its
    front page within a few seconds, or they open this website (Copy the link for pupils, to paste into Google Classroom),
    on a laptop in Chrome, with their school account.
-6. **The quiz locks** if a pupil leaves the page (unless you turned Auto-lock or Track + warn off); you unlock them on the live page.
+6. **The quiz locks** if a pupil leaves the page (unless you turned Auto-lock or Track + warn off): another tab or window, or closing the page or going to another page and then opening the quiz again. A reload of the page goes straight back in. You unlock them on the live page.
 7. **Marking**: choice questions and short answers are marked at once from the form's key. Paragraph answers, and short
    answers close to the key, wait for you on one screen, one key press per mark.
 8. **Results**: your class quiz by quiz, each question, each topic, each pupil over time, and who to check on. The × under
