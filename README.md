@@ -2,6 +2,8 @@
 
 Made by Dr Daniel Mompel Riera.
 
+![Quiz Hall's results for a made-up class: each pupil's score in each quiz, coloured from red to green](docs/img/screen.jpg)
+
 **Run your Google Forms quizzes as locked quizzes in class, and see how every pupil is doing.**
 Open it at <https://nlcsbiology.com/quiz-hall/>.
 
